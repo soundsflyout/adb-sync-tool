@@ -1,6 +1,10 @@
+use adb_client::server::ADBServer;
 use std::env;
-use std::fs;
-use std::process::Command;
+use std::ffi::OsString;
+use std::fmt;
+use std::fs::{File, metadata};
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 use walkdir::WalkDir;
 
 fn main() {
@@ -9,29 +13,25 @@ fn main() {
         None => panic!("No root path found"),
     };
 
-    let local_dir: &str = "/Volumes/NETWORK-DRIVE/Music/Songs/";
-    let remote_dir: &str = "storage/BF87-2316/Music/Songs/";
+    let local_dir: &str = "Music/";
+    let remote_dir: &str = "storage/BF87-2316/Music";
 
     root_path.push(local_dir);
+    let actual_path = &root_path.display().to_string();
+
+    let mut server = ADBServer::default();
+    let mut device = server.get_device().expect("Can't get device");
+    let remote_files = &device.list(remote_dir).unwrap();
+    device.shell_command("ls");
 
     for entry in WalkDir::new(root_path) {
         match entry {
             Ok(path) => {
                 let curr_path = path.path();
 
-                if fs::metadata(curr_path).expect("Path not found").is_file() {
+                if metadata(curr_path).expect("Path not found").is_file() {
                     println!("Currently working on {:?}", curr_path);
-
-                    let instance = Command::new("adb")
-                        .arg("push --sync")
-                        .arg(curr_path)
-                        .arg(remote_dir)
-                        .output();
-
-                    match instance {
-                        Err(_) => println!("Error at path {:?}", curr_path.display()),
-                        Ok(_) => println!("Finished {:?}", curr_path.display()),
-                    }
+                    curr_path.strip_prefix(actual_path);
                 }
             }
             // Avoid panic to traverse what we can.
