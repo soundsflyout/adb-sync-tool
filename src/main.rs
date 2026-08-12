@@ -11,8 +11,9 @@ fn main() {
         None => panic!("No root path found"),
     };
 
-    let local_dir: &str = "Music/";
-    let remote_dir: &str = "storage/BF87-2316/Music";
+    let local_dir: &str = "/Volumes/NETWORK-DRIVE/Music/Songs/";
+    let remote_dir: &str = "storage/BF87-2316/Music/Songs/";
+    let allow_hidden: bool = false;
 
     root_path.push(local_dir);
     let abs_root_path = &root_path.display().to_string();
@@ -56,18 +57,24 @@ fn main() {
                         .as_secs()
                 {
                     if path_metadata.is_file() {
-                        println!("Update needed");
                         let file_path = File::open(curr_path).expect("File not found!");
-                        device
-                            .push(file_path, remote_path_str)
-                            .expect("File push error");
+                        if allow_hidden
+                            || !curr_path
+                                .file_name()
+                                .unwrap()
+                                .to_string_lossy()
+                                .starts_with('.')
+                        {
+                            device
+                                .push(file_path, remote_path_str)
+                                .expect("File push error");
+                        }
                     } else {
                         let cmd = format!(r#"mkdir -p "{}""#, remote_path_str);
                         device.shell_command(&cmd, None, None);
                     }
                 }
             }
-            // Avoid panic to traverse what we can.
             Err(e) => println!("{:?}", e),
         }
     }
