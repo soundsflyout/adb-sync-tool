@@ -10,7 +10,7 @@ fn main() {
         None => panic!("No root path found"),
     };
 
-    let local_dir: &str = "Music/";
+    let local_dir: &str = "/Volumes/NETWORK-DRIVE/Music/";
     let remote_dir: &str = "storage/BF87-2316/Music";
 
     root_path.push(local_dir);
@@ -29,21 +29,27 @@ fn main() {
                     let rel_path = curr_path
                         .strip_prefix(abs_root_path)
                         .expect("Error wrong prefix");
-                    println!("{:?}", curr_path.display());
 
                     let mut remote_path = PathBuf::from(remote_dir);
                     remote_path.push(rel_path);
-                    println!("{}", remote_path.display());
                     let remote_path_str = remote_path
                         .into_os_string()
                         .into_string()
                         .expect("Invalid path");
+                    println!("Remote path is located at: {}", remote_path_str);
 
-                    let result = device.stat(&remote_path_str).unwrap().mod_time;
+                    let result = match device.stat(&remote_path_str) {
+                        Ok(stats) => stats.mod_time,
+                        Err(_) => 0,
+                    };
+                    println!("Mod time: {}", result);
+
                     // Since this is unix time, a value of 0 means the file does not exist.
                     if result == 0 {
                         let file_path = File::open(curr_path).expect("File not found!");
-                        device.push(file_path, remote_path_str).unwrap();
+                        device
+                            .push(file_path, remote_path_str)
+                            .expect("This is the location of the error");
                     }
                 }
             }
