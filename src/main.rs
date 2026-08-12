@@ -1,10 +1,7 @@
 use adb_client::server::ADBServer;
 use std::env;
-use std::ffi::OsString;
-use std::fmt;
 use std::fs::{File, metadata};
-use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::path::PathBuf;
 use walkdir::WalkDir;
 
 fn main() {
@@ -17,12 +14,10 @@ fn main() {
     let remote_dir: &str = "storage/BF87-2316/Music";
 
     root_path.push(local_dir);
-    let actual_path = &root_path.display().to_string();
+    let abs_root_path = &root_path.display().to_string();
 
     let mut server = ADBServer::default();
     let mut device = server.get_device().expect("Can't get device");
-    let remote_files = &device.list(remote_dir).unwrap();
-    device.shell_command("ls");
 
     for entry in WalkDir::new(root_path) {
         match entry {
@@ -31,7 +26,25 @@ fn main() {
 
                 if metadata(curr_path).expect("Path not found").is_file() {
                     println!("Currently working on {:?}", curr_path);
-                    curr_path.strip_prefix(actual_path);
+                    let rel_path = curr_path
+                        .strip_prefix(abs_root_path)
+                        .expect("Error wrong prefix");
+                    println!("{:?}", curr_path.display());
+
+                    let mut remote_path = PathBuf::from(remote_dir);
+                    remote_path.push(rel_path);
+                    println!("{}", remote_path.display());
+                    let remote_path_str = remote_path
+                        .into_os_string()
+                        .into_string()
+                        .expect("Invalid path");
+
+                    let result = device.stat(&remote_path_str).unwrap().mod_time;
+                    // Since this is unix time, a value of 0 means the file does not exist.
+                    if result == 0 {
+                        let file_path = File::open(curr_path).expect("File not found!");
+                        device.push(file_path, remote_path_str).unwrap();
+                    }
                 }
             }
             // Avoid panic to traverse what we can.
