@@ -42,8 +42,6 @@ fn main() {
     let mut server = ADBServer::default();
     let mut device = server.get_device().expect("Can't get device");
 
-    device.root().expect("Can't run as root");
-
     let mut add: u64 = 0;
     let mut change: u64 = 0;
 
