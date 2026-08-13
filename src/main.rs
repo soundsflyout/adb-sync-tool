@@ -1,16 +1,23 @@
 use adb_client::{ADBDeviceExt, server::ADBServer};
+use clap::Parser;
 use console::style;
 use dialoguer::Confirm;
 use indicatif::{ProgressBar, ProgressStyle};
 use serde::{Deserialize, Serialize};
-use serde_json::from_reader;
 use std::env;
 use std::fs::{File, metadata};
 use std::path::PathBuf;
-use std::thread;
 use std::time::Duration;
-use std::time::UNIX_EPOCH;
 use walkdir::WalkDir;
+const MIB_OVER_KIB: u64 = 1_024;
+const GIB_OVER_KIB: u64 = 1_048_576;
+const TIB_OVER_KIB: u64 = 1_073_741_824;
+
+#[derive(Parser)]
+struct Cli {
+    stream_dir: String, //push or pull
+    alias: String,
+}
 
 #[derive(Serialize, Deserialize)]
 struct ConfigFile {
@@ -19,7 +26,48 @@ struct ConfigFile {
     allow_hidden: bool,
 }
 
+fn filesize_type(input: &str) -> String {
+    let value: u64 = input.parse().expect("Not a valid number");
+    match value {
+        0..MIB_OVER_KIB => String::from("KiB"),
+        MIB_OVER_KIB..GIB_OVER_KIB => String::from("MiB"),
+        GIB_OVER_KIB..TIB_OVER_KIB => String::from("GiB"),
+        _ => String::from("TiB"),
+    }
+}
+
+fn human_readable(input: &str) -> f64 {
+    let filesize = filesize_type(input);
+    let value: f64 = input.parse().expect("Not a valid number");
+    match filesize {
+        x if x == "KiB" => value,
+        x if x == "MiB" => value / (MIB_OVER_KIB as f64),
+        x if x == "GiB" => value / (GIB_OVER_KIB as f64),
+        x if x == "TiB" => value / (TIB_OVER_KIB as f64),
+        _ => 0.0,
+    }
+}
+
+fn check_enough_space(addition: u64, total_size: u64, free_space: u64) -> bool {
+    if free_space - addition < 10024 {
+        println!("Not enough space on disk");
+        false
+    } else if ((free_space - addition) as f64) < (total_size as f64) * 0.05 {
+        Confirm::new()
+            .with_prompt("Warning: less than 5% of disk space after change. Continue?")
+            .interact()
+            .unwrap()
+    } else {
+        Confirm::new()
+            .with_prompt("Do you want to make changes?")
+            .interact()
+            .unwrap()
+    }
+}
+
 fn main() {
+    let cli_input = Cli::parse();
+
     let mut root_path = match env::home_dir() {
         Some(path) => path,
         None => panic!("No root path found"),
@@ -44,6 +92,7 @@ fn main() {
 
     let mut add: u64 = 0;
     let mut change: u64 = 0;
+    let mut total_file_size: u64 = 0;
 
     let mut queue: Vec<PathBuf> = Vec::new();
 
@@ -75,6 +124,7 @@ fn main() {
             if allow_hidden || !&path.file_name().unwrap().to_string_lossy().starts_with('.') {
                 if path_metadata.is_file() {
                     add += 1;
+                    total_file_size += path_metadata.len();
                 }
                 queue.push(path);
             }
@@ -89,18 +139,49 @@ fn main() {
         {
             if path_metadata.is_file() {
                 change += 1;
+                total_file_size += path_metadata.len();
             }
             queue.push(path);
         }
     }
     directory_loader.finish();
 
+    // Convert file in bytes to corresponding kiB
+    total_file_size /= 1024;
+
     println!("Files to add: {}", add);
     println!("Files to change: {}", change);
-    let confirmation = Confirm::new()
-        .with_prompt("Do you want to make changes?")
-        .interact()
+
+    let update_file_size_str: &str = &format!("{}", total_file_size);
+    let update_file_size_human_readable = human_readable(update_file_size_str);
+    let update_file_size_filesize_type = filesize_type(update_file_size_str);
+    println!(
+        "Size of files to be changed: {:.2} {}",
+        update_file_size_human_readable, update_file_size_filesize_type
+    );
+
+    let mut stdout = Vec::new();
+    device
+        .shell_command(
+            &"df /storage/BF87-2316 | tail -n 1",
+            Some(&mut stdout),
+            None,
+        )
         .unwrap();
+    let stdout_str: String = String::from_utf8(stdout).unwrap();
+    let stdout_values: Vec<&str> = stdout_str.split_whitespace().collect();
+    let free_human_readable = human_readable(stdout_values[3]);
+    let free_filesize_type = filesize_type(stdout_values[3]);
+
+    let total_dir_size: u64 = stdout_values[1].parse().expect("Not a valid number");
+    let free_dir_size: u64 = stdout_values[3].parse().expect("Not a valid number");
+
+    println!(
+        "Space available: {:.2} {}",
+        free_human_readable, free_filesize_type
+    );
+
+    let confirmation: bool = check_enough_space(total_file_size, total_dir_size, free_dir_size);
 
     if !confirmation {
         println!("Exiting...");
