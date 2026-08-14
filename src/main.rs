@@ -8,6 +8,7 @@ use std::env;
 use std::fs::{File, metadata};
 use std::path::PathBuf;
 use std::time::Duration;
+use std::time::UNIX_EPOCH;
 use walkdir::WalkDir;
 const MIB_OVER_KIB: u64 = 1_024;
 const GIB_OVER_KIB: u64 = 1_048_576;
@@ -234,7 +235,7 @@ fn main() {
                     }
                 } else {
                     let cmd = format!(r#"mkdir -p "{}""#, remote_path_str);
-                    device.shell_command(&cmd, None, None);
+                    device.shell_command(&cmd, None, None).unwrap();
                 }
             }
         }
