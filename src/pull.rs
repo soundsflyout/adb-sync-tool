@@ -1,6 +1,5 @@
 pub mod pull_tools {
 
-    use adb_client::RustADBError;
     use adb_client::{ADBDeviceExt, server_device::ADBServerDevice};
     use console::style;
     use indicatif::ProgressBar;
@@ -33,19 +32,6 @@ pub mod pull_tools {
         }
     }
 
-    fn is_a_file(
-        device: &mut ADBServerDevice,
-        remote_path_str: &str,
-    ) -> Result<bool, RustADBError> {
-        let mut stdout: Vec<u8> = Vec::new();
-        let shell_command: String = format!(r#"ls -ld "{}""#, remote_path_str);
-        device.shell_command(&shell_command, Some(&mut stdout), None)?;
-        match stdout.first() {
-            Some(x) => Ok(*x != b'd'),
-            None => panic!("Improper stdout"),
-        }
-    }
-
     pub fn fetch_changes(
         local_path: &Path,
         remote_dir: &String,
@@ -64,11 +50,22 @@ pub mod pull_tools {
         directory_loader.enable_steady_tick(Duration::from_millis(100));
 
         let mut stdout = Vec::new();
-        let shell_command: String = format!("find {}", remote_dir);
+        let shell_command: String = format!("find {} -type d", remote_dir);
         device.shell_command(&shell_command, Some(&mut stdout), None)?;
         let stdout_str: String = String::from_utf8(stdout)?;
         // Iterable walking through each directory recursively
-        let stdout_values: Lines = stdout_str.lines();
+        let directories: Lines = stdout_str.lines();
+        for path in directories {
+            queue.push((PathBuf::from(path), false));
+        }
+
+        //Do the same thing for files
+        let mut stdout = Vec::new();
+        let shell_command: String = format!("find {} -type f", remote_dir);
+        device.shell_command(&shell_command, Some(&mut stdout), None)?;
+        let stdout_str: String = String::from_utf8(stdout)?;
+        let files: Lines = stdout_str.lines();
+
         let scan_length: u64 = stdout_str.bytes().filter(|&b| b == b'\n').count() as u64;
 
         directory_loader.finish();
@@ -76,7 +73,7 @@ pub mod pull_tools {
         println!("Fetching changes...");
         let loading_bar = ProgressBar::new(scan_length);
 
-        for entry in stdout_values {
+        for entry in files {
             let remote_path = PathBuf::from(entry);
             let remote_path_str = remote_path.to_str().expect("Invalid path");
 
@@ -88,34 +85,24 @@ pub mod pull_tools {
 
             let modified_time: u64 = modified_time(&local_path);
 
-            // Since it's so expensive, store it as part of the queue.
-            let Ok(is_file) = is_a_file(device, remote_path_str) else {
-                panic!("Not appropriate")
-            };
-
             let is_hidden: bool = remote_path
                 .file_name()
                 .expect("Not appropriate file name")
                 .to_string_lossy()
                 .starts_with('.');
 
-            if modified_time == 0 {
-                if allow_hidden || is_hidden {
-                    if is_file {
-                        add += 1;
-                        total_file_size += device.stat(remote_path_str)?.file_size as u64;
-                    }
-                    queue.push((remote_path, is_file));
-                }
-            } else if (modified_time < (device.stat(remote_path_str)?.mod_time as u64))
-                && (allow_hidden || is_hidden)
-            {
-                if is_file {
+            if allow_hidden || !is_hidden {
+                if modified_time == 0 {
+                    add += 1;
+                    total_file_size += device.stat(remote_path_str)?.file_size as u64;
+                } else if modified_time < device.stat(remote_path_str)?.mod_time as u64 {
                     change += 1;
                     total_file_size += device.stat(remote_path_str)?.file_size as u64;
                 }
-                queue.push((remote_path, is_file));
+
+                queue.push((remote_path, true));
             }
+
             loading_bar.inc(1);
         }
         loading_bar.finish();
