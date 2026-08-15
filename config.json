@@ -1,5 +1,5 @@
 {
-    "local_dir": "/Volumes/SSD/Music/",
-    "remote_dir": "storage/BF87-2316/Music/",
+    "local_dir": "/Volumes/SSD/RetroArchBackup/",
+    "remote_dir": "sdcard/RetroArch",
     "allow_hidden": false
 }

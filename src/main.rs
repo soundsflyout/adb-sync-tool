@@ -1,30 +1,24 @@
 pub mod pull;
 pub mod push;
 
-use adb_client::{ADBDeviceExt, server::ADBServer, server_device::ADBServerDevice};
+use adb_client::{ADBDeviceExt, server::ADBServer};
 use clap::Parser;
-use console::style;
 use dialoguer::Confirm;
-use indicatif::{ProgressBar, ProgressStyle};
 use serde::{Deserialize, Serialize};
 use std::env;
-use std::fs::{File, metadata};
-use std::path::PathBuf;
-use std::time::Duration;
-use std::time::UNIX_EPOCH;
-use walkdir::WalkDir;
+use std::fs::File;
 const MIB_OVER_KIB: u64 = 1_024;
 const GIB_OVER_KIB: u64 = 1_048_576;
 const TIB_OVER_KIB: u64 = 1_073_741_824;
 use crate::pull::pull_tools;
 use crate::push::push_tools;
-use std::path::Path;
-use std::str::Lines;
+use std::error::Error;
+use std::process::Command;
+use std::process::Stdio;
 
 #[derive(Parser)]
 struct Cli {
     stream_dir: String, //push or pull
-    alias: String,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -35,7 +29,10 @@ struct ConfigFile {
 }
 
 fn filesize_type(input: &str) -> String {
-    let value: u64 = input.parse().expect("Not a valid number");
+    let mut value: u64 = input.parse().expect("Not a valid number");
+    if cfg!(target_os = "windows") {
+        value /= 1024;
+    }
     match value {
         0..MIB_OVER_KIB => String::from("KiB"),
         MIB_OVER_KIB..GIB_OVER_KIB => String::from("MiB"),
@@ -46,7 +43,10 @@ fn filesize_type(input: &str) -> String {
 
 fn human_readable(input: &str) -> f64 {
     let filesize = filesize_type(input);
-    let value: f64 = input.parse().expect("Not a valid number");
+    let mut value: f64 = input.parse().expect("Not a valid number");
+    if cfg!(target_os = "windows") {
+        value /= 1024.0;
+    }
     match filesize {
         x if x == "KiB" => value,
         x if x == "MiB" => value / (MIB_OVER_KIB as f64),
@@ -56,15 +56,10 @@ fn human_readable(input: &str) -> f64 {
     }
 }
 
-fn check_enough_space(addition: u64, total_size: u64, free_space: u64) -> bool {
-    if free_space - addition < 10024 {
+fn check_enough_space(addition: u64, free_space: u64) -> bool {
+    if free_space < 10024 + addition {
         println!("Not enough space on disk");
         false
-    } else if ((free_space - addition) as f64) < (total_size as f64) * 0.05 {
-        Confirm::new()
-            .with_prompt("Warning: less than 5% of disk space after change. Continue?")
-            .interact()
-            .unwrap()
     } else {
         Confirm::new()
             .with_prompt("Do you want to make changes?")
@@ -73,8 +68,8 @@ fn check_enough_space(addition: u64, total_size: u64, free_space: u64) -> bool {
     }
 }
 
-fn main() {
-    //    let cli_input = Cli::parse();
+fn main() -> Result<(), Box<dyn Error>> {
+    let cli_input = Cli::parse();
 
     let mut local_path = match env::home_dir() {
         Some(path) => path,
@@ -93,16 +88,17 @@ fn main() {
     let mut server = ADBServer::default();
     let mut device = server.get_device().expect("Can't get device");
 
-    let client_request: &str = "pull";
+    if cli_input.stream_dir == "push" {
+        let Ok(queue) =
+            push_tools::fetch_changes(&local_path, &remote_dir, &mut device, allow_hidden)
+        else {
+            panic!("Can't grab files")
+        };
 
-    if client_request == "push" {
-        let (queue, add, change, total_file_size) =
-            push_tools::fetch_changes(&local_path, &remote_dir, &mut device, allow_hidden);
+        println!("Files to add: {}", queue.add);
+        println!("Files to change: {}", queue.change);
 
-        println!("Files to add: {}", add);
-        println!("Files to change: {}", change);
-
-        let update_file_size_str: &str = &format!("{}", total_file_size);
+        let update_file_size_str: &str = &format!("{}", queue.total_size);
         let update_file_size_human_readable = human_readable(update_file_size_str);
         let update_file_size_filesize_type = filesize_type(update_file_size_str);
         println!(
@@ -111,53 +107,94 @@ fn main() {
         );
 
         let mut stdout = Vec::new();
-        let shell_command: String = format!("df {} | tail -n 1", remote_dir);
-        device
-            .shell_command(&shell_command, Some(&mut stdout), None)
-            .unwrap();
+        let shell_command: String = format!(r#"df "{}" | tail -n 1"#, remote_dir);
+        device.shell_command(&shell_command, Some(&mut stdout), None)?;
         let stdout_str: String = String::from_utf8(stdout).unwrap();
         let stdout_values: Vec<&str> = stdout_str.split_whitespace().collect();
         let free_human_readable = human_readable(stdout_values[3]);
         let free_filesize_type = filesize_type(stdout_values[3]);
 
-        let total_dir_size: u64 = stdout_values[1].parse().expect("Not a valid number");
-        let free_dir_size: u64 = stdout_values[3].parse().expect("Not a valid number");
+        let free_dir_size: u64 = stdout_values[3].parse()?;
 
         println!(
             "Space available: {:.2} {}",
             free_human_readable, free_filesize_type
         );
 
-        let confirmation: bool = check_enough_space(total_file_size, total_dir_size, free_dir_size);
+        let confirmation: bool = check_enough_space(queue.total_size, free_dir_size);
 
         if !confirmation {
             println!("Exiting...");
         } else {
-            push_tools::write_changes(
-                queue,
-                &local_path,
-                &remote_dir,
-                add,
-                change,
-                &mut device,
-                allow_hidden,
-            );
+            push_tools::write_changes(queue, &local_path, &remote_dir, &mut device, allow_hidden);
         }
     }
 
-    if client_request == "pull" {
-        let (queue, add, change, total_file_size) =
-            pull_tools::fetch_changes(&local_path, &remote_dir, &mut device, allow_hidden);
+    if cli_input.stream_dir == "pull" {
+        let Ok(queue) =
+            pull_tools::fetch_changes(&local_path, &remote_dir, &mut device, allow_hidden)
+        else {
+            panic!("Improper inputs")
+        };
 
-        println!("Files to add: {}", add);
-        println!("Files to change: {}", change);
+        println!("Files to add: {}", queue.add);
+        println!("Files to change: {}", queue.change);
 
-        let update_file_size_str: &str = &format!("{}", total_file_size);
+        let update_file_size_str: &str = &format!("{}", queue.total_size);
         let update_file_size_human_readable = human_readable(update_file_size_str);
         let update_file_size_filesize_type = filesize_type(update_file_size_str);
         println!(
             "Size of files to be changed: {:.2} {}",
             update_file_size_human_readable, update_file_size_filesize_type
         );
+        let unix_command: String =
+            format!(r#"df -k "{}" | tail -n 1"#, local_path.to_str().unwrap());
+        let windows_command: String = format!(
+            r#"dir /-c "{}" | findstr /C:"bytes free""#,
+            local_path.to_str().unwrap()
+        );
+
+        let output = if cfg!(target_os = "windows") {
+            Command::new("cmd")
+                .arg("/C")
+                .arg(&windows_command)
+                .stdout(Stdio::piped())
+                .output()?
+        } else if cfg!(target_os = "macos") || cfg!(target_os = "linux") {
+            Command::new("sh")
+                .arg("-c")
+                .arg(&unix_command)
+                .stdout(Stdio::piped())
+                .output()?
+        } else {
+            panic!("Unsupported device")
+        };
+
+        let stdout_str = String::from_utf8(output.stdout).unwrap();
+        let stdout_values: Vec<&str> = stdout_str.split_whitespace().collect();
+
+        let free_space: &str = if cfg!(target_os = "windows") {
+            stdout_values[2]
+        } else {
+            stdout_values[3]
+        };
+
+        let free_human_readable = human_readable(free_space);
+        let free_filesize_type = filesize_type(free_space);
+
+        let free_dir_size: u64 = free_space.parse()?;
+
+        println!(
+            "Space available: {:.2} {}",
+            free_human_readable, free_filesize_type
+        );
+
+        let confirmation: bool = check_enough_space(queue.total_size, free_dir_size);
+        if !confirmation {
+            println!("Exiting...");
+        } else {
+            pull_tools::write_changes(queue, &local_path, &remote_dir, &mut device, allow_hidden)?
+        }
     }
+    Ok(())
 }

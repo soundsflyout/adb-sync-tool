@@ -3,6 +3,7 @@ pub mod push_tools {
     use adb_client::{ADBDeviceExt, server_device::ADBServerDevice};
     use console::style;
     use indicatif::ProgressBar;
+    use std::error::Error;
     use std::fs::{File, metadata};
     use std::path::Path;
     use std::path::PathBuf;
@@ -10,12 +11,19 @@ pub mod push_tools {
     use std::time::UNIX_EPOCH;
     use walkdir::WalkDir;
 
+    pub struct Queue {
+        pub queue: Vec<PathBuf>,
+        pub add: u64,
+        pub change: u64,
+        pub total_size: u64,
+    }
+
     pub fn fetch_changes(
         local_path: &Path,
         remote_dir: &String,
         device: &mut ADBServerDevice,
         allow_hidden: bool,
-    ) -> (Vec<PathBuf>, u64, u64, u64) {
+    ) -> Result<Queue, Box<dyn Error>> {
         let mut add: u64 = 0;
         let mut change: u64 = 0;
         let mut total_file_size: u64 = 0;
@@ -30,7 +38,7 @@ pub mod push_tools {
         directory_loader.enable_steady_tick(Duration::from_millis(100));
 
         for entry in WalkDir::new(local_path) {
-            let path = entry.unwrap().path().to_path_buf();
+            let path = entry?.path().to_path_buf();
 
             let rel_path = path
                 .strip_prefix(&abs_local_path)
@@ -43,7 +51,7 @@ pub mod push_tools {
                 .into_string()
                 .expect("Invalid path");
 
-            let modified_time = device.stat(&remote_path_str).unwrap().mod_time as u64;
+            let modified_time = device.stat(&remote_path_str)?.mod_time as u64;
 
             let path_metadata = metadata(&path).expect("Path not found");
 
@@ -57,10 +65,8 @@ pub mod push_tools {
                 }
             } else if (modified_time
                 < path_metadata
-                    .modified()
-                    .unwrap()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap()
+                    .modified()?
+                    .duration_since(UNIX_EPOCH)?
                     .as_secs())
                 && (allow_hidden || !&path.file_name().unwrap().to_string_lossy().starts_with('.'))
             {
@@ -76,23 +82,26 @@ pub mod push_tools {
         // Convert file in bytes to corresponding kiB
         total_file_size /= 1024;
 
-        (queue, add, change, total_file_size)
+        Ok(Queue {
+            queue,
+            add,
+            change,
+            total_size: total_file_size,
+        })
     }
 
     pub fn write_changes(
-        queue: Vec<PathBuf>,
+        queue: Queue,
         local_path: &Path,
         remote_dir: &String,
-        add: u64,
-        change: u64,
         device: &mut ADBServerDevice,
         allow_hidden: bool,
     ) {
-        let total: u64 = add + change;
+        let total: u64 = queue.add + queue.change;
         let mut curr_idx: u64 = 1;
 
         let abs_local_path = local_path.display().to_string();
-        for path in queue {
+        for path in queue.queue {
             let path_metadata = metadata(&path).unwrap();
             let mut remote_path = PathBuf::from(remote_dir);
 
