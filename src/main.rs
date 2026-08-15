@@ -149,18 +149,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         );
         let unix_command: String =
             format!(r#"df -k "{}" | tail -n 1"#, local_path.to_str().unwrap());
-        let windows_command: String = format!(
-            r#"dir /-c "{}" | findstr /C:"bytes free""#,
-            local_path.to_str().unwrap()
-        );
 
-        let output = if cfg!(target_os = "windows") {
-            Command::new("cmd")
-                .arg("/C")
-                .arg(&windows_command)
-                .stdout(Stdio::piped())
-                .output()?
-        } else if cfg!(target_os = "macos") || cfg!(target_os = "linux") {
+        let output = if cfg!(target_os = "macos") || cfg!(target_os = "linux") {
             Command::new("sh")
                 .arg("-c")
                 .arg(&unix_command)
@@ -173,11 +163,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let stdout_str = String::from_utf8(output.stdout).unwrap();
         let stdout_values: Vec<&str> = stdout_str.split_whitespace().collect();
 
-        let free_space: &str = if cfg!(target_os = "windows") {
-            stdout_values[2]
-        } else {
-            stdout_values[3]
-        };
+        let free_space: &str = stdout_values[3];
 
         let free_human_readable = human_readable(free_space);
         let free_filesize_type = filesize_type(free_space);
