@@ -10,7 +10,7 @@ See it in action:
 
 ![See it in action](./ast-example.gif)
 
-## Usage instructions
+## Installation and usage instructions
 
 0. Make sure that android-debug-bridge (adb) is installed and developer options are turned on.
    - To install adb, please look up instructions based on your distribution.
