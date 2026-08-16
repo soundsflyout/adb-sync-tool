@@ -6,6 +6,7 @@ pub mod queue;
 const MIB_OVER_KIB: u64 = 1_024;
 const GIB_OVER_KIB: u64 = 1_048_576;
 const TIB_OVER_KIB: u64 = 1_073_741_824;
+const CONFIG_PATH: &str = include_str!("../config.json");
 
 use adb_client::{ADBDeviceExt, server::ADBServer};
 use clap::Parser;
@@ -14,7 +15,6 @@ use serde_json::value::Value;
 use std::env;
 use std::error::Error;
 use std::fs::File;
-use std::path::Path;
 use std::process::Command;
 use std::process::Stdio;
 
@@ -75,17 +75,25 @@ fn check_enough_space(addition: u64, free_space: u64) -> bool {
 fn main() -> Result<(), Box<dyn Error>> {
     let cli_input = Cli::parse();
 
-    if !Path::new("config.json").is_file() {
-        panic!(
-            "Error: config.json is missing. Please read example_config.json or the readme for details."
-        );
-    }
-
     if !(cfg!(target_os = "macos") || cfg!(target_os = "linux")) {
         panic!("Unsupported OS. Only MacOS and Linux are currently supported.")
     }
+    let mut config_path = match env::home_dir() {
+        Some(path) => path,
+        None => panic!("No root path found"),
+    };
+    config_path.push("adb-sync-tool/config.json");
 
-    let config_file = File::open("config.json").expect("Cannot find config file");
+    let config_file = match File::open(config_path) {
+        Ok(file) => file,
+        Err(_) => {
+            println!(
+                "Cannot find config file. Please read example_config.json or the readme for details. Exiting..."
+            );
+            return Ok(());
+        }
+    };
+
     let mut alias: Value = serde_json::from_reader(config_file).expect("Cannot read config file");
     let config: ConfigFile = serde_json::from_value(alias[cli_input.alias].take())?;
 

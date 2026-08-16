@@ -11,6 +11,7 @@ dependencies = [
  "console",
  "dialoguer",
  "indicatif",
+ "project-root",
  "serde",
  "serde_json",
  "tracing",
@@ -895,6 +896,12 @@ checksum = "985e7ec9bb745e6ce6535b544d84d6cd6f7ad8bd711c398938ae983b91a766d9"
 dependencies = [
  "unicode-ident",
 ]
+
+[[package]]
+name = "project-root"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8bccbff07d5ed689c4087d20d7307a52ab6141edeedf487c3876a55b86cf63df"
 
 [[package]]
 name = "pxfm"
