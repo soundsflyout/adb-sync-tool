@@ -40,7 +40,7 @@ cd ~/adb-sync-tool && cargo install --path .
 - `ast pull {YOUR_ALIAS}` to sync files from your android device to your local machine.
 See `ast --help` for additional options. 
 
-## Getting the device storage location for config.json
+## Getting the android device storage location for config.json
 ### If you are syncing the directory from your android device's internal storage
 You just need to prepend '/sdcard/' to the 'remote_dir' value. For example, if you wanted to sync my `Music` directory in internal storage,
 you would set in `config.json`:
