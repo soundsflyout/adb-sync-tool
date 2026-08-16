@@ -1,37 +1,35 @@
+pub mod config;
 pub mod pull;
 pub mod push;
+pub mod queue;
+
+const MIB_OVER_KIB: u64 = 1_024;
+const GIB_OVER_KIB: u64 = 1_048_576;
+const TIB_OVER_KIB: u64 = 1_073_741_824;
 
 use adb_client::{ADBDeviceExt, server::ADBServer};
 use clap::Parser;
 use dialoguer::Confirm;
-use serde::{Deserialize, Serialize};
 use serde_json::value::Value;
 use std::env;
-use std::fs::File;
-const MIB_OVER_KIB: u64 = 1_024;
-const GIB_OVER_KIB: u64 = 1_048_576;
-const TIB_OVER_KIB: u64 = 1_073_741_824;
-use crate::pull::pull_tools;
-use crate::push::push_tools;
 use std::error::Error;
+use std::fs::File;
+use std::path::Path;
 use std::process::Command;
 use std::process::Stdio;
 
+use crate::config::ConfigFile;
+use crate::pull::pull_tools;
+use crate::push::push_tools;
+
 #[derive(Parser)]
-struct Cli {
-    stream_dir: String, //push or pull
-    alias: String,
+pub struct Cli {
+    pub stream_dir: String, //push or pull
+    pub alias: String,
 
     // Set --ignore_changes if you don't want to update changes
     #[arg(short, long, default_value_t = true)]
-    ignore_changes: bool,
-}
-
-#[derive(Serialize, Deserialize)]
-struct ConfigFile {
-    local_dir: String,
-    remote_dir: String,
-    allow_hidden: bool,
+    pub ignore_changes: bool,
 }
 
 fn filesize_type(input: &str) -> String {
@@ -77,36 +75,33 @@ fn check_enough_space(addition: u64, free_space: u64) -> bool {
 fn main() -> Result<(), Box<dyn Error>> {
     let cli_input = Cli::parse();
 
+    if !Path::new("config.json").is_file() {
+        panic!(
+            "Error: config.json is missing. Please read example_config.json or the readme for details."
+        );
+    }
+
     if !(cfg!(target_os = "macos") || cfg!(target_os = "linux")) {
         panic!("Unsupported OS. Only MacOS and Linux are currently supported.")
     }
-
-    let mut local_path = match env::home_dir() {
-        Some(path) => path,
-        None => panic!("No root path found"),
-    };
 
     let config_file = File::open("config.json").expect("Cannot find config file");
     let mut alias: Value = serde_json::from_reader(config_file).expect("Cannot read config file");
     let config: ConfigFile = serde_json::from_value(alias[cli_input.alias].take())?;
 
-    let local_dir: String = config.local_dir;
-    let remote_dir: String = config.remote_dir;
-    let allow_hidden: bool = config.allow_hidden;
-
-    local_path.push(local_dir);
+    let mut local_path = match env::home_dir() {
+        Some(path) => path,
+        None => panic!("No root path found"),
+    };
+    local_path.push(&config.local_dir);
 
     let mut server = ADBServer::default();
     let mut device = server.get_device().expect("Can't get device");
 
     if cli_input.stream_dir == "push" {
-        let Ok(queue) = push_tools::fetch_changes(
-            &local_path,
-            &remote_dir,
-            &mut device,
-            allow_hidden,
-            cli_input.ignore_changes,
-        ) else {
+        let Ok(queue) =
+            push_tools::fetch_changes(&config, &mut device, &local_path, cli_input.ignore_changes)
+        else {
             panic!("Can't grab files. Do both the local and remote directories exist?")
         };
 
@@ -127,7 +122,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         );
 
         let mut stdout = Vec::new();
-        let shell_command: String = format!(r#"df "{}" | tail -n 1"#, remote_dir);
+        let shell_command: String = format!(r#"df "{}" | tail -n 1"#, config.remote_dir);
         device.shell_command(&shell_command, Some(&mut stdout), None)?;
         let stdout_str: String = String::from_utf8(stdout)?;
         let stdout_values: Vec<&str> = stdout_str.split_whitespace().collect();
@@ -146,18 +141,14 @@ fn main() -> Result<(), Box<dyn Error>> {
         if !confirmation {
             println!("Exiting...");
         } else {
-            push_tools::write_changes(queue, &local_path, &remote_dir, &mut device, allow_hidden);
+            push_tools::write_changes(queue, &config, &mut device, &local_path);
         }
     }
 
     if cli_input.stream_dir == "pull" {
-        let Ok(queue) = pull_tools::fetch_changes(
-            &local_path,
-            &remote_dir,
-            &mut device,
-            allow_hidden,
-            cli_input.ignore_changes,
-        ) else {
+        let Ok(queue) =
+            pull_tools::fetch_changes(&config, &mut device, &local_path, cli_input.ignore_changes)
+        else {
             panic!("Can't grab files. Do both the local and remote directories exist?")
         };
 
@@ -204,7 +195,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         if !confirmation {
             println!("Exiting...");
         } else {
-            pull_tools::write_changes(queue, &local_path, &remote_dir, &mut device, allow_hidden)?
+            pull_tools::write_changes(queue, &config, &mut device, &local_path)?
         }
     }
     Ok(())

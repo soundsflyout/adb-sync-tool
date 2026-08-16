@@ -5,8 +5,8 @@
     "allow_hidden": false
     },
     "music": {
-        "local_dir": "/Volumes/SSD/Music/",
-        "remote_dir": "sdcard/Music/",
+        "local_dir": "/Volumes/NETWORK-DRIVE/Music/",
+        "remote_dir": "storage/BF87-2316/Music/",
         "allow_hidden": false
     }
 }

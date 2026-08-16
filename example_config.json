@@ -1,0 +1,19 @@
+//Example config. Replace this file with `config.json`. 
+// Add aliases for each pair of files you want to sync: e.g.
+{
+"my_music": {
+    "local_dir": "/local/path/to/my/music",
+    "remote_dir": "/path/on/android/to/music/folder",
+    //change this to `true` if you want to allow files/directories
+    // with a dot starting in the name (e.g. /.config/)
+    "allow_hidden": false
+},
+"my_pictures": {
+    //If you remove the the first `/` in `local_dir`, this will 
+    //automatically prepend `/home/{user}/`, e.g.:
+    "local_dir": "relative/path/to/my/picures",
+    "remote_dir": "/path/on/android/to/pictures/folder",
+    "allow_hidden": true
+}
+
+}

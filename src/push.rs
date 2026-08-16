@@ -1,29 +1,22 @@
 pub mod push_tools {
-
     use adb_client::{ADBDeviceExt, server_device::ADBServerDevice};
     use console::style;
     use indicatif::ProgressBar;
     use std::error::Error;
     use std::fs::{File, metadata};
-    use std::path::Path;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
     use std::process::Command;
     use std::str::Lines;
     use std::time::Duration;
     use std::time::UNIX_EPOCH;
 
-    pub struct Queue {
-        pub queue: Vec<(PathBuf, bool)>,
-        pub add: u64,
-        pub change: u64,
-        pub total_size: u64,
-    }
+    use crate::config::ConfigFile;
+    use crate::queue::Queue;
 
     pub fn fetch_changes(
-        local_path: &Path,
-        remote_dir: &String,
+        config: &ConfigFile,
         device: &mut ADBServerDevice,
-        allow_hidden: bool,
+        local_path: &Path,
         ignore_changes: bool,
     ) -> Result<Queue, Box<dyn Error>> {
         let mut add: u64 = 0;
@@ -32,7 +25,8 @@ pub mod push_tools {
 
         let abs_local_path = local_path.display().to_string();
 
-        let mut queue: Vec<(PathBuf, bool)> = Vec::new();
+        let mut dir_queue: Vec<PathBuf> = Vec::new();
+        let mut file_queue: Vec<PathBuf> = Vec::new();
         let directory_loader = ProgressBar::new_spinner();
         println!("Scanning directories...");
         directory_loader.enable_steady_tick(Duration::from_millis(100));
@@ -45,7 +39,7 @@ pub mod push_tools {
         let directories: Lines = stdout_str.lines();
         // Add directories to queue
         for path in directories {
-            queue.push((PathBuf::from(path), false));
+            dir_queue.push(PathBuf::from(path));
         }
 
         //Do the same thing for files
@@ -66,7 +60,7 @@ pub mod push_tools {
 
             let rel_path = local_path.strip_prefix(&abs_local_path)?;
 
-            let mut remote_path = PathBuf::from(remote_dir);
+            let mut remote_path = PathBuf::from(&config.remote_dir);
             remote_path.push(rel_path);
             let remote_path_str = remote_path.to_str().expect("Invalid path");
 
@@ -79,17 +73,17 @@ pub mod push_tools {
                 .to_string_lossy()
                 .starts_with('.');
 
-            if allow_hidden || !is_hidden {
+            if config.allow_hidden || !is_hidden {
                 if modified_time == 0 {
                     add += 1;
                     total_file_size += path_metadata.len();
-                    queue.push((local_path, true));
+                    file_queue.push(local_path);
                 } else if !ignore_changes
                     && modified_time < device.stat(remote_path_str)?.mod_time as u64
                 {
                     change += 1;
                     total_file_size += path_metadata.len();
-                    queue.push((local_path, true));
+                    file_queue.push(local_path);
                 }
             }
 
@@ -101,7 +95,8 @@ pub mod push_tools {
         total_file_size /= 1024;
 
         Ok(Queue {
-            queue,
+            dir_queue,
+            file_queue,
             add,
             change,
             total_size: total_file_size,
@@ -110,18 +105,38 @@ pub mod push_tools {
 
     pub fn write_changes(
         queue: Queue,
-        local_path: &Path,
-        remote_dir: &String,
+        config: &ConfigFile,
         device: &mut ADBServerDevice,
-        allow_hidden: bool,
+        local_path: &Path,
     ) {
         let total: u64 = queue.add + queue.change;
         let mut curr_idx: u64 = 1;
 
         let abs_local_path = local_path.display().to_string();
-        for (path, is_file) in queue.queue {
+
+        let directory_loader = ProgressBar::new_spinner();
+        println!("Initializing directories...");
+        directory_loader.enable_steady_tick(Duration::from_millis(100));
+        for path in queue.dir_queue {
+            let mut remote_path = PathBuf::from(&config.remote_dir);
+
+            let rel_path = path
+                .strip_prefix(&abs_local_path)
+                .expect("Error: wrong prefix");
+
+            remote_path.push(rel_path);
+            let remote_path_str = remote_path
+                .into_os_string()
+                .into_string()
+                .expect("Invalid path");
+            let cmd = format!(r#"mkdir -p "{}""#, remote_path_str);
+            device.shell_command(&cmd, None, None).unwrap();
+        }
+        directory_loader.finish();
+
+        for path in queue.file_queue {
             let path_metadata = metadata(&path).unwrap();
-            let mut remote_path = PathBuf::from(remote_dir);
+            let mut remote_path = PathBuf::from(&config.remote_dir);
 
             let rel_path = path
                 .strip_prefix(&abs_local_path)
@@ -145,27 +160,22 @@ pub mod push_tools {
                     .unwrap()
                     .as_secs()
             {
-                if is_file {
-                    let file_path = File::open(&path).expect("File not found!");
-                    if allow_hidden
-                        || !&path.file_name().unwrap().to_string_lossy().starts_with('.')
-                    {
-                        let add_or_update: &str = if modified_time == 0 {
-                            "Adding"
-                        } else {
-                            "Updating"
-                        };
-                        let curr_idx_str = format!("[{}/{}]", curr_idx, total);
-                        let push_message = format!("{} {}", add_or_update, rel_path_str);
-                        println!("{} {}", style(curr_idx_str).bold().dim(), push_message);
-                        device
-                            .push(file_path, &remote_path_str)
-                            .expect("file push error");
-                        curr_idx += 1;
-                    }
-                } else {
-                    let cmd = format!(r#"mkdir -p "{}""#, remote_path_str);
-                    device.shell_command(&cmd, None, None).unwrap();
+                let file_path = File::open(&path).expect("File not found!");
+                if config.allow_hidden
+                    || !&path.file_name().unwrap().to_string_lossy().starts_with('.')
+                {
+                    let add_or_update: &str = if modified_time == 0 {
+                        "Adding"
+                    } else {
+                        "Updating"
+                    };
+                    let curr_idx_str = format!("[{}/{}]", curr_idx, total);
+                    let push_message = format!("{} {}", add_or_update, rel_path_str);
+                    println!("{} {}", style(curr_idx_str).bold().dim(), push_message);
+                    device
+                        .push(file_path, &remote_path_str)
+                        .expect("file push error");
+                    curr_idx += 1;
                 }
             }
         }
