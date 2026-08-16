@@ -4,7 +4,6 @@
 
 - Allow a `delete files` to delete files in target directory that does not
 belong in source directory.
-- Allow user to quickly determine location of correct directory.
 - Properly handle admin permissions (current plan is to ignore
 files/directories where the user does not have permissions).
 
