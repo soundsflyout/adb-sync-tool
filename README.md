@@ -24,7 +24,7 @@ config file properly.*
 2. Enter the repository
 
 ```
-cd ~/adb-sync-tool/
+cd ~/adb-sync-tool
 ```
 
 3. If rust is not installed on your system:
