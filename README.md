@@ -15,7 +15,7 @@ See it in action:
 1. Clone the repository to your home directory:
 
 ```
-cd ~ && git clone https://github.com/soundsflyout/adb-sync-tool/tree/master
+cd ~ && git clone https://github.com/soundsflyout/adb-sync-tool/
 ```
 
 *Note: the repository must be in the home directory for the program to read the
