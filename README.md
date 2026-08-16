@@ -1,6 +1,6 @@
 # Adb-Sync-Tool
 
-Seamlessly syncs directories between your mac/linix machine and android.
+Seamlessly syncs directories between your Mac/Linux machine and Android.
 
 ## How it works
 
