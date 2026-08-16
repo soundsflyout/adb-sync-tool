@@ -9,12 +9,8 @@ clap = { version = "4.6.6", features = ["derive"] }
 console = "0.16.4"
 dialoguer = "0.12.0"
 indicatif = "0.18.6"
-project-root = "0.2.2"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
-tracing = "0.1.44"
-tracing-indicatif = "0.3.14"
-walkdir = "2.5.0"
 
 [[bin]]
 name = "ast"
