@@ -76,7 +76,7 @@ belong in source directory.
 - Properly handle admin permissions (current plan is to ignore
 files/directories where the user does not have permissions).
 
-## Possible considerations to be aware of
+## Considerations to be aware of
 - If a directory has a trailing whitespace, such as 'hello /', the program will
   exit. This is because android will auto remove trailing whitespaces when making
   directories: i.e., android will make `hello/` when asked to make `hello /`
