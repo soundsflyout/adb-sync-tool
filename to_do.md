@@ -3,27 +3,8 @@
 ## Features to be added
 
 - Allow user to quickly determine location of correct directory.
-- Add a push feature as well as a pull feature.
-- Allow for pushing a specific alias via json in the following format:
-
-```
-{
-    "alias1": {
-        "local_dir": foo1,
-        "remote_dir": bar1,
-        "allow_hidden": bool1
-    },
-    "alias2": {
-        "local_dir": foo1,
-        "remote_dir": bar1,
-        "allow_hidden": bool1
-    }
-}
-```
-
-and then allow calling by `program push/pull alias1/alias2`.
-
-Alternatively, allow pushing everything by `push/pull all`
+- Properly handle admin permissions (current plan is to ignore
+files/directories where the user does not have permissions).
 
 ## Known issues
 

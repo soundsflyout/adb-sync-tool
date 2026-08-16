@@ -1,5 +1,12 @@
 {
-    "local_dir": "RetroArchBackup",
+    "retroarch": {
+    "local_dir": "/Volumes/SSD/RetroArchBackup",
     "remote_dir": "sdcard/RetroArch",
     "allow_hidden": false
+    },
+    "music": {
+        "local_dir": "/Volumes/SSD/Music/",
+        "remote_dir": "sdcard/Music/",
+        "allow_hidden": false
+    }
 }

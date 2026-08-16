@@ -37,6 +37,7 @@ pub mod pull_tools {
         remote_dir: &String,
         device: &mut ADBServerDevice,
         allow_hidden: bool,
+        ignore_changes: bool,
     ) -> Result<Queue, Box<dyn Error>> {
         let mut add: u64 = 0;
         let mut change: u64 = 0;
@@ -95,12 +96,14 @@ pub mod pull_tools {
                 if modified_time == 0 {
                     add += 1;
                     total_file_size += device.stat(remote_path_str)?.file_size as u64;
-                } else if modified_time < device.stat(remote_path_str)?.mod_time as u64 {
+                    queue.push((remote_path, true));
+                } else if !ignore_changes
+                    && modified_time < device.stat(remote_path_str)?.mod_time as u64
+                {
                     change += 1;
                     total_file_size += device.stat(remote_path_str)?.file_size as u64;
+                    queue.push((remote_path, true));
                 }
-
-                queue.push((remote_path, true));
             }
 
             loading_bar.inc(1);

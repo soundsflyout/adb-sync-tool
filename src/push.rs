@@ -7,12 +7,13 @@ pub mod push_tools {
     use std::fs::{File, metadata};
     use std::path::Path;
     use std::path::PathBuf;
+    use std::process::Command;
+    use std::str::Lines;
     use std::time::Duration;
     use std::time::UNIX_EPOCH;
-    use walkdir::WalkDir;
 
     pub struct Queue {
-        pub queue: Vec<PathBuf>,
+        pub queue: Vec<(PathBuf, bool)>,
         pub add: u64,
         pub change: u64,
         pub total_size: u64,
@@ -23,6 +24,7 @@ pub mod push_tools {
         remote_dir: &String,
         device: &mut ADBServerDevice,
         allow_hidden: bool,
+        ignore_changes: bool,
     ) -> Result<Queue, Box<dyn Error>> {
         let mut add: u64 = 0;
         let mut change: u64 = 0;
@@ -30,54 +32,70 @@ pub mod push_tools {
 
         let abs_local_path = local_path.display().to_string();
 
-        let mut queue: Vec<PathBuf> = Vec::new();
-        // Walk directories recursively and record the file paths of files that need to be added/changed
-        // as a vector.
+        let mut queue: Vec<(PathBuf, bool)> = Vec::new();
         let directory_loader = ProgressBar::new_spinner();
-        println!("Fetching changes...");
+        println!("Scanning directories...");
         directory_loader.enable_steady_tick(Duration::from_millis(100));
 
-        for entry in WalkDir::new(local_path) {
-            let path = entry?.path().to_path_buf();
+        let shell_command: String = format!("find {} -type d", abs_local_path);
+        let output = Command::new("sh").arg("-c").arg(&shell_command).output()?;
+        let stdout_str = String::from_utf8(output.stdout)?;
 
-            let rel_path = path
-                .strip_prefix(&abs_local_path)
-                .expect("Error: wrong prefix");
+        // Iterable walking through each directory recursively
+        let directories: Lines = stdout_str.lines();
+        // Add directories to queue
+        for path in directories {
+            queue.push((PathBuf::from(path), false));
+        }
+
+        //Do the same thing for files
+        let shell_command: String = format!("find {} -type f", abs_local_path);
+        let output = Command::new("sh").arg("-c").arg(&shell_command).output()?;
+        let stdout_str = String::from_utf8(output.stdout)?;
+        let files: Lines = stdout_str.lines();
+
+        let scan_length: u64 = stdout_str.bytes().filter(|&b| b == b'\n').count() as u64;
+
+        directory_loader.finish();
+
+        println!("Fetching changes...");
+        let loading_bar = ProgressBar::new(scan_length);
+
+        for entry in files {
+            let local_path = PathBuf::from(entry);
+
+            let rel_path = local_path.strip_prefix(&abs_local_path)?;
 
             let mut remote_path = PathBuf::from(remote_dir);
             remote_path.push(rel_path);
-            let remote_path_str = remote_path
-                .into_os_string()
-                .into_string()
-                .expect("Invalid path");
+            let remote_path_str = remote_path.to_str().expect("Invalid path");
 
-            let modified_time = device.stat(&remote_path_str)?.mod_time as u64;
+            let modified_time = device.stat(remote_path_str)?.mod_time as u64;
 
-            let path_metadata = metadata(&path).expect("Path not found");
+            let path_metadata = metadata(&local_path)?;
+            let is_hidden = local_path
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with('.');
 
-            if modified_time == 0 {
-                if allow_hidden || !&path.file_name().unwrap().to_string_lossy().starts_with('.') {
-                    if path_metadata.is_file() {
-                        add += 1;
-                        total_file_size += path_metadata.len();
-                    }
-                    queue.push(path);
-                }
-            } else if (modified_time
-                < path_metadata
-                    .modified()?
-                    .duration_since(UNIX_EPOCH)?
-                    .as_secs())
-                && (allow_hidden || !&path.file_name().unwrap().to_string_lossy().starts_with('.'))
-            {
-                if path_metadata.is_file() {
+            if allow_hidden || !is_hidden {
+                if modified_time == 0 {
+                    add += 1;
+                    total_file_size += path_metadata.len();
+                    queue.push((local_path, true));
+                } else if !ignore_changes
+                    && modified_time < device.stat(remote_path_str)?.mod_time as u64
+                {
                     change += 1;
                     total_file_size += path_metadata.len();
+                    queue.push((local_path, true));
                 }
-                queue.push(path);
             }
+
+            loading_bar.inc(1);
         }
-        directory_loader.finish();
+        loading_bar.finish();
 
         // Convert file in bytes to corresponding kiB
         total_file_size /= 1024;
@@ -101,7 +119,7 @@ pub mod push_tools {
         let mut curr_idx: u64 = 1;
 
         let abs_local_path = local_path.display().to_string();
-        for path in queue.queue {
+        for (path, is_file) in queue.queue {
             let path_metadata = metadata(&path).unwrap();
             let mut remote_path = PathBuf::from(remote_dir);
 
@@ -127,7 +145,7 @@ pub mod push_tools {
                     .unwrap()
                     .as_secs()
             {
-                if path_metadata.is_file() {
+                if is_file {
                     let file_path = File::open(&path).expect("File not found!");
                     if allow_hidden
                         || !&path.file_name().unwrap().to_string_lossy().starts_with('.')

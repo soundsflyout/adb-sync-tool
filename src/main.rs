@@ -5,6 +5,7 @@ use adb_client::{ADBDeviceExt, server::ADBServer};
 use clap::Parser;
 use dialoguer::Confirm;
 use serde::{Deserialize, Serialize};
+use serde_json::value::Value;
 use std::env;
 use std::fs::File;
 const MIB_OVER_KIB: u64 = 1_024;
@@ -19,6 +20,11 @@ use std::process::Stdio;
 #[derive(Parser)]
 struct Cli {
     stream_dir: String, //push or pull
+    alias: String,
+
+    // Set --ignore_changes if you don't want to update changes
+    #[arg(short, long, default_value_t = true)]
+    ignore_changes: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -71,13 +77,18 @@ fn check_enough_space(addition: u64, free_space: u64) -> bool {
 fn main() -> Result<(), Box<dyn Error>> {
     let cli_input = Cli::parse();
 
+    if !(cfg!(target_os = "macos") || cfg!(target_os = "linux")) {
+        panic!("Unsupported OS. Only MacOS and Linux are currently supported.")
+    }
+
     let mut local_path = match env::home_dir() {
         Some(path) => path,
         None => panic!("No root path found"),
     };
 
     let config_file = File::open("config.json").expect("Cannot find config file");
-    let config: ConfigFile = serde_json::from_reader(config_file).expect("Cannot read config file");
+    let mut alias: Value = serde_json::from_reader(config_file).expect("Cannot read config file");
+    let config: ConfigFile = serde_json::from_value(alias[cli_input.alias].take())?;
 
     let local_dir: String = config.local_dir;
     let remote_dir: String = config.remote_dir;
@@ -89,14 +100,23 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut device = server.get_device().expect("Can't get device");
 
     if cli_input.stream_dir == "push" {
-        let Ok(queue) =
-            push_tools::fetch_changes(&local_path, &remote_dir, &mut device, allow_hidden)
-        else {
-            panic!("Can't grab files")
+        let Ok(queue) = push_tools::fetch_changes(
+            &local_path,
+            &remote_dir,
+            &mut device,
+            allow_hidden,
+            cli_input.ignore_changes,
+        ) else {
+            panic!("Can't grab files. Do both the local and remote directories exist?")
         };
 
         println!("Files to add: {}", queue.add);
         println!("Files to change: {}", queue.change);
+
+        if queue.add == 0 && queue.change == 0 {
+            println!("No changes available. Exiting...");
+            return Ok(());
+        }
 
         let update_file_size_str: &str = &format!("{}", queue.total_size);
         let update_file_size_human_readable = human_readable(update_file_size_str);
@@ -109,7 +129,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let mut stdout = Vec::new();
         let shell_command: String = format!(r#"df "{}" | tail -n 1"#, remote_dir);
         device.shell_command(&shell_command, Some(&mut stdout), None)?;
-        let stdout_str: String = String::from_utf8(stdout).unwrap();
+        let stdout_str: String = String::from_utf8(stdout)?;
         let stdout_values: Vec<&str> = stdout_str.split_whitespace().collect();
         let free_human_readable = human_readable(stdout_values[3]);
         let free_filesize_type = filesize_type(stdout_values[3]);
@@ -131,14 +151,23 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     if cli_input.stream_dir == "pull" {
-        let Ok(queue) =
-            pull_tools::fetch_changes(&local_path, &remote_dir, &mut device, allow_hidden)
-        else {
-            panic!("Improper inputs")
+        let Ok(queue) = pull_tools::fetch_changes(
+            &local_path,
+            &remote_dir,
+            &mut device,
+            allow_hidden,
+            cli_input.ignore_changes,
+        ) else {
+            panic!("Can't grab files. Do both the local and remote directories exist?")
         };
 
         println!("Files to add: {}", queue.add);
         println!("Files to change: {}", queue.change);
+
+        if queue.add == 0 && queue.change == 0 {
+            println!("No changes available. Exiting...");
+            return Ok(());
+        }
 
         let update_file_size_str: &str = &format!("{}", queue.total_size);
         let update_file_size_human_readable = human_readable(update_file_size_str);
@@ -150,15 +179,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         let unix_command: String =
             format!(r#"df -k "{}" | tail -n 1"#, local_path.to_str().unwrap());
 
-        let output = if cfg!(target_os = "macos") || cfg!(target_os = "linux") {
-            Command::new("sh")
-                .arg("-c")
-                .arg(&unix_command)
-                .stdout(Stdio::piped())
-                .output()?
-        } else {
-            panic!("Unsupported device")
-        };
+        let output = Command::new("sh")
+            .arg("-c")
+            .arg(&unix_command)
+            .stdout(Stdio::piped())
+            .output()?;
 
         let stdout_str = String::from_utf8(output.stdout).unwrap();
         let stdout_values: Vec<&str> = stdout_str.split_whitespace().collect();
