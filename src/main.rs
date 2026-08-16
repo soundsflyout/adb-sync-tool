@@ -6,7 +6,6 @@ pub mod queue;
 const MIB_OVER_KIB: u64 = 1_024;
 const GIB_OVER_KIB: u64 = 1_048_576;
 const TIB_OVER_KIB: u64 = 1_073_741_824;
-const CONFIG_PATH: &str = include_str!("../config.json");
 
 use adb_client::{ADBDeviceExt, server::ADBServer};
 use clap::Parser;
