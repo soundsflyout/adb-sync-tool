@@ -39,7 +39,7 @@ cd ~/adb-sync-tool && cargo install --path .
 ```
 
 5. Create a `config.json` file in `~/adb-sync-tool/` and follow the format
-   in `example_config.json`. See [this section](#getting-the-device-storage-location-for-config.json) for more info.
+   in `example_config.json`. See the next section for more info.
    
 6. To run the program,
 - `ast push {YOUR_ALIAS}` to sync files from your local machine to the android device.
