@@ -45,3 +45,28 @@ cd ~/adb-sync-tool && cargo install --path .
 - `ast push {YOUR_ALIAS}` to sync files from your local machine to the android device.
 - `ast pull {YOUR_ALIAS}` to sync files from your android device to your local machine.
 See `ast --help` for additional options. 
+
+## Getting the device storage location for config.json
+If you are syncing the directory from your android device's internal storage, then you just need to prepend
+'/sdcard/' to the 'remote_dir' value. For example, if I wanted to sync my `Music` directory in internal storage,
+I just need to set
+```
+"music": {
+   "local_dir": "/local/path/to/my/music",
+   "remote_dir": "/sdcard/Music/",
+   "allow_hidden": false
+}
+```
+Running `ast push music` will then push my music into the `Music` directory in internal storage. 
+
+If you are syncing the directory from your android device's SD card, then you need to get the SD card name. 
+Run `ast storage` to print out the names of all the mount points on your android device. The SD card will usually
+be mounted on `/storage/{YOUR SD CARD NAME}`. E.g. my SD card has the name `/storage/BF87-2316/`. It will *not* be 
+`/storage/emulated`. We can repeat the same steps as in the internal storage case. For example:
+```
+"music": {
+   "local_dir": "/local/path/to/my/music",
+   "remote_dir": "/storage/{NAME OF YOUR SD CARD}/Music/",
+   "allow_hidden": false
+```
+works to sync the `Music` folder in the SD card. 
