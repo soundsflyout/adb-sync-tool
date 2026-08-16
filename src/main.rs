@@ -24,7 +24,7 @@ use crate::push::push_tools;
 #[derive(Parser)]
 pub struct Cli {
     pub stream_dir: String, //push or pull
-    pub alias: String,
+    pub alias: Option<String>,
 
     // Set --ignore_changes if you don't want to update changes
     #[arg(short, long, default_value_t = true)]
@@ -77,6 +77,18 @@ fn main() -> Result<(), Box<dyn Error>> {
     if !(cfg!(target_os = "macos") || cfg!(target_os = "linux")) {
         panic!("Unsupported OS. Only MacOS and Linux are currently supported.")
     }
+
+    let mut server = ADBServer::default();
+    let mut device = server.get_device().expect("Can't get device");
+
+    if cli_input.stream_dir == "storage" {
+        let mut stdout = Vec::new();
+        device.shell_command(&"df -h", Some(&mut stdout), None)?;
+        let stdout_str: String = String::from_utf8(stdout)?;
+        println!("{}", stdout_str);
+        return Ok(());
+    }
+
     let mut config_path = match env::home_dir() {
         Some(path) => path,
         None => panic!("No root path found"),
@@ -93,17 +105,18 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     };
 
+    let Some(cli_alias) = cli_input.alias else {
+        panic!("Error: Missing alias")
+    };
+
     let mut alias: Value = serde_json::from_reader(config_file).expect("Cannot read config file");
-    let config: ConfigFile = serde_json::from_value(alias[cli_input.alias].take())?;
+    let config: ConfigFile = serde_json::from_value(alias[cli_alias].take())?;
 
     let mut local_path = match env::home_dir() {
         Some(path) => path,
         None => panic!("No root path found"),
     };
     local_path.push(&config.local_dir);
-
-    let mut server = ADBServer::default();
-    let mut device = server.get_device().expect("Can't get device");
 
     if cli_input.stream_dir == "push" {
         let Ok(queue) =
