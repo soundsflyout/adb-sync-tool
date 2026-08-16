@@ -12,7 +12,7 @@ See it in action:
 
 ## Usage instructions
 
-0. Make sure that android-debug-bridge (adb) and developer options are turned on.
+0. Make sure that android-debug-bridge (adb) is installed and developer options are turned on.
    - To install adb, please look up instructions based on your distribution.
      1. For mac homebrew:
      ```
