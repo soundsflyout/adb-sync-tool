@@ -12,7 +12,19 @@ See it in action:
 
 ## Usage instructions
 
-1. Clone the repository to your home directory:
+0. Make sure that android-debug-bridge (adb) and developer options are turned on.
+   - To install adb, please look up instructions based on your distribution.
+     1. For mac homebrew:
+     ```
+        brew install --cask android-platform-tools
+     ```
+     2. For Arch Linux users:
+      ```
+         sudo pacman -S android-tools
+      ```
+   - To turn on developer mode, [follow these instructions](https://developer.android.com/studio/debug/dev-options#enable).
+
+2. Clone the repository to your home directory:
 
 ```
 cd ~ && git clone https://github.com/soundsflyout/adb-sync-tool/
