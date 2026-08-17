@@ -51,7 +51,16 @@ pub mod pull_tools {
         // Iterable walking through each directory recursively
         let directories: Lines = stdout_str.lines();
         for path in directories {
-            dir_queue.push(PathBuf::from(path));
+            let path_buf = PathBuf::from(path);
+            if config.allow_hidden
+                || !path_buf
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .starts_with('.')
+            {
+                dir_queue.push(path_buf);
+            }
         }
 
         //Do the same thing for files
@@ -131,15 +140,13 @@ pub mod pull_tools {
         for path in queue.dir_queue {
             let mut curr_local_path = PathBuf::from(&local_path);
 
-            let rel_path = path
-                .strip_prefix(&config.remote_dir)
-                .expect("Error: wrong prefix");
+            let rel_path = path.strip_prefix(&config.remote_dir)?;
 
             curr_local_path.push(rel_path);
             let local_path_str = curr_local_path.to_str().expect("Not a path");
 
             let cmd = format!(r#"mkdir -p "{}""#, local_path_str);
-            Command::new("sh").arg("-c").arg(cmd).output().unwrap();
+            Command::new("sh").arg("-c").arg(cmd).output()?;
         }
         directory_loader.finish();
 

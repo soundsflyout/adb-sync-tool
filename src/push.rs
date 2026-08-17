@@ -39,7 +39,16 @@ pub mod push_tools {
         let directories: Lines = stdout_str.lines();
         // Add directories to queue
         for path in directories {
-            dir_queue.push(PathBuf::from(path));
+            let path_buf = PathBuf::from(path);
+            if config.allow_hidden
+                || !path_buf
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .starts_with('.')
+            {
+                dir_queue.push(path_buf);
+            }
         }
 
         //Do the same thing for files
@@ -112,7 +121,7 @@ pub mod push_tools {
         let total: u64 = queue.add + queue.change;
         let mut curr_idx: u64 = 1;
 
-        let abs_local_path = local_path.display().to_string();
+        let abs_local_path = local_path.to_str().unwrap();
 
         let directory_loader = ProgressBar::new_spinner();
         println!("Initializing directories...");
@@ -120,7 +129,7 @@ pub mod push_tools {
         for path in queue.dir_queue {
             let mut remote_path = PathBuf::from(&config.remote_dir);
 
-            let rel_path = path.strip_prefix(&abs_local_path)?;
+            let rel_path = path.strip_prefix(abs_local_path)?;
 
             remote_path.push(rel_path);
             let remote_path_str = remote_path.to_str().expect("Invalid path");
@@ -134,7 +143,7 @@ pub mod push_tools {
             let mut remote_path = PathBuf::from(&config.remote_dir);
 
             let rel_path = path
-                .strip_prefix(&abs_local_path)
+                .strip_prefix(abs_local_path)
                 .expect("Error: wrong prefix");
 
             let rel_path_str = rel_path.to_str().unwrap();
