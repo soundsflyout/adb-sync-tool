@@ -161,7 +161,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         if !confirmation {
             println!("Exiting...");
         } else {
-            push_tools::write_changes(queue, &config, &mut device, &local_path);
+            push_tools::write_changes(queue, &config, &mut device, &local_path)?;
         }
     }
 

@@ -157,10 +157,10 @@ pub mod pull_tools {
 
             let modified_time = modified_time(&curr_local_path) as u32;
             let remote_path_str = path.to_str().expect("This remote path is not valid");
-            let remote_metadata = device.stat(remote_path_str)?;
+            let remote_mod_time = device.stat(remote_path_str)?.mod_time;
 
             // Since this is unix time, a value of 0 means the file does not exist.
-            if modified_time < remote_metadata.mod_time
+            if modified_time < remote_mod_time
                 && (config.allow_hidden
                     || !&path
                         .file_name()

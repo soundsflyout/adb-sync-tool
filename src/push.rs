@@ -108,7 +108,7 @@ pub mod push_tools {
         config: &ConfigFile,
         device: &mut ADBServerDevice,
         local_path: &Path,
-    ) {
+    ) -> Result<(), Box<dyn Error>> {
         let total: u64 = queue.add + queue.change;
         let mut curr_idx: u64 = 1;
 
@@ -150,14 +150,12 @@ pub mod push_tools {
                 .into_string()
                 .expect("Invalid path");
 
-            let modified_time = device.stat(&remote_path_str).unwrap().mod_time as u64;
+            let modified_time = device.stat(&remote_path_str)?.mod_time as u64;
             // Since this is unix time, a value of 0 means the file does not exist.
             if modified_time
                 < path_metadata
-                    .modified()
-                    .unwrap()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap()
+                    .modified()?
+                    .duration_since(UNIX_EPOCH)?
                     .as_secs()
             {
                 let file_path = File::open(&path).expect("File not found!");
@@ -179,5 +177,6 @@ pub mod push_tools {
                 }
             }
         }
+        Ok(())
     }
 }
