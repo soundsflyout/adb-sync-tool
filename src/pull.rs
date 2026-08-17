@@ -39,7 +39,6 @@ pub mod pull_tools {
         let mut dir_queue: Vec<PathBuf> = Vec::new();
         let mut file_queue: Vec<PathBuf> = Vec::new();
 
-        //Do the same thing for files
         let mut stdout = Vec::new();
         let shell_command: String = format!("find {} -type f", config.remote_dir);
         device.shell_command(&shell_command, Some(&mut stdout), None)?;
@@ -146,14 +145,7 @@ pub mod pull_tools {
             let remote_mod_time = device.stat(remote_path_str)?.mod_time;
 
             // Since this is unix time, a value of 0 means the file does not exist.
-            if modified_time < remote_mod_time
-                && (config.allow_hidden
-                    || !&path
-                        .file_name()
-                        .expect("This remote path is not valid")
-                        .to_string_lossy()
-                        .starts_with('.'))
-            {
+            if modified_time < remote_mod_time {
                 let add_or_update: &str = if modified_time == 0 {
                     "Adding"
                 } else {

@@ -23,12 +23,11 @@ pub mod push_tools {
         let mut change: u64 = 0;
         let mut total_file_size: i64 = 0;
 
-        let abs_local_path = local_path.display().to_string();
+        let abs_local_path = local_path.to_str().expect("Invalid path");
 
         let mut dir_queue: Vec<PathBuf> = Vec::new();
         let mut file_queue: Vec<PathBuf> = Vec::new();
 
-        //Do the same thing for files
         let shell_command: String = format!("find {} -type f", abs_local_path);
         let output = Command::new("sh").arg("-c").arg(&shell_command).output()?;
         let stdout_str = String::from_utf8(output.stdout)?;
@@ -42,7 +41,7 @@ pub mod push_tools {
         for entry in files {
             let local_path = PathBuf::from(entry);
 
-            let rel_path = local_path.strip_prefix(&abs_local_path)?;
+            let rel_path = local_path.strip_prefix(abs_local_path)?;
 
             let mut remote_path = PathBuf::from(&config.remote_dir);
             remote_path.push(rel_path);
@@ -88,7 +87,6 @@ pub mod push_tools {
                 }
                 file_queue.push(local_path);
             }
-
             loading_bar.inc(1);
         }
         loading_bar.finish();
@@ -130,9 +128,7 @@ pub mod push_tools {
             let path_metadata = metadata(&path)?;
             let mut remote_path = PathBuf::from(&config.remote_dir);
 
-            let rel_path = path
-                .strip_prefix(abs_local_path)
-                .expect("Error: wrong prefix");
+            let rel_path = path.strip_prefix(abs_local_path)?;
 
             let rel_path_str = rel_path.to_str().unwrap();
 
@@ -147,21 +143,17 @@ pub mod push_tools {
                     .duration_since(UNIX_EPOCH)?
                     .as_secs()
             {
-                let file_path = File::open(&path).expect("File not found!");
-                if config.allow_hidden
-                    || !&path.file_name().unwrap().to_string_lossy().starts_with('.')
-                {
-                    let add_or_update: &str = if modified_time == 0 {
-                        "Adding"
-                    } else {
-                        "Updating"
-                    };
-                    let curr_idx_str = format!("[{}/{}]", curr_idx, total);
-                    let push_message = format!("{} {}", add_or_update, rel_path_str);
-                    println!("{} {}", style(curr_idx_str).bold().dim(), push_message);
-                    device.push(file_path, remote_path_str)?;
-                    curr_idx += 1;
-                }
+                let file_path = File::open(&path)?;
+                let add_or_update: &str = if modified_time == 0 {
+                    "Adding"
+                } else {
+                    "Updating"
+                };
+                let curr_idx_str = format!("[{}/{}]", curr_idx, total);
+                let push_message = format!("{} {}", add_or_update, rel_path_str);
+                println!("{} {}", style(curr_idx_str).bold().dim(), push_message);
+                device.push(file_path, remote_path_str)?;
+                curr_idx += 1;
             }
         }
         Ok(())
