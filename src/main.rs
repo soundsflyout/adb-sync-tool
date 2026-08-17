@@ -3,9 +3,9 @@ pub mod pull;
 pub mod push;
 pub mod queue;
 
-const MIB_OVER_KIB: u64 = 1_024;
-const GIB_OVER_KIB: u64 = 1_048_576;
-const TIB_OVER_KIB: u64 = 1_073_741_824;
+const MIB_OVER_KIB: i64 = 1_024;
+const GIB_OVER_KIB: i64 = 1_048_576;
+const TIB_OVER_KIB: i64 = 1_073_741_824;
 
 use adb_client::{ADBDeviceExt, server::ADBServer};
 use clap::Parser;
@@ -27,12 +27,12 @@ pub struct Cli {
     pub alias: Option<String>,
 
     // Set --ignore_changes if you don't want to update changes
-    #[arg(short, long, default_value_t = true)]
+    #[arg(short, long, default_value_t = false)]
     pub ignore_changes: bool,
 }
 
 fn filesize_type(input: &str) -> String {
-    let mut value: u64 = input.parse().expect("Not a valid number");
+    let mut value: i64 = input.parse().expect("Not a valid number");
     if cfg!(target_os = "windows") {
         value /= 1024;
     }
@@ -59,7 +59,7 @@ fn human_readable(input: &str) -> f64 {
     }
 }
 
-fn check_enough_space(addition: u64, free_space: u64) -> bool {
+fn check_enough_space(addition: i64, free_space: i64) -> bool {
     if free_space < 10024 + addition {
         println!("Not enough space on disk");
         false
@@ -149,7 +149,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let free_human_readable = human_readable(stdout_values[3]);
         let free_filesize_type = filesize_type(stdout_values[3]);
 
-        let free_dir_size: u64 = stdout_values[3].parse()?;
+        let free_dir_size: i64 = stdout_values[3].parse()?;
 
         println!(
             "Space available: {:.2} {}",
@@ -204,7 +204,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let free_human_readable = human_readable(free_space);
         let free_filesize_type = filesize_type(free_space);
 
-        let free_dir_size: u64 = free_space.parse()?;
+        let free_dir_size: i64 = free_space.parse()?;
 
         println!(
             "Space available: {:.2} {}",
