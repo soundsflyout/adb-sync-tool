@@ -68,12 +68,17 @@ pub mod push_tools {
             {
                 let parent_dir = remote_path.parent().expect("Cannot find parent directory");
                 let path_buf = PathBuf::from(parent_dir);
-                if config.allow_hidden
-                    || !path_buf
-                        .file_name()
-                        .unwrap()
-                        .to_string_lossy()
-                        .starts_with('.')
+                let is_added: bool = match dir_queue.last() {
+                    Some(x) => x == parent_dir,
+                    None => false,
+                };
+                if !is_added
+                    & (config.allow_hidden
+                        || !path_buf
+                            .file_name()
+                            .unwrap()
+                            .to_string_lossy()
+                            .starts_with('.'))
                 {
                     dir_queue.push(path_buf);
                 }
