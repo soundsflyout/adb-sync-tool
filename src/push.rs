@@ -120,17 +120,12 @@ pub mod push_tools {
         for path in queue.dir_queue {
             let mut remote_path = PathBuf::from(&config.remote_dir);
 
-            let rel_path = path
-                .strip_prefix(&abs_local_path)
-                .expect("Error: wrong prefix");
+            let rel_path = path.strip_prefix(&abs_local_path)?;
 
             remote_path.push(rel_path);
-            let remote_path_str = remote_path
-                .into_os_string()
-                .into_string()
-                .expect("Invalid path");
+            let remote_path_str = remote_path.to_str().expect("Invalid path");
             let cmd = format!(r#"mkdir -p "{}""#, remote_path_str);
-            device.shell_command(&cmd, None, None).unwrap();
+            device.shell_command(&cmd, None, None)?;
         }
         directory_loader.finish();
 
