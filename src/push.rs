@@ -145,12 +145,9 @@ pub mod push_tools {
             let rel_path_str = rel_path.to_str().unwrap();
 
             remote_path.push(rel_path);
-            let remote_path_str = remote_path
-                .into_os_string()
-                .into_string()
-                .expect("Invalid path");
+            let remote_path_str = remote_path.to_str().expect("Invalid path");
 
-            let modified_time = device.stat(&remote_path_str)?.mod_time as u64;
+            let modified_time = device.stat(remote_path_str)?.mod_time as u64;
             // Since this is unix time, a value of 0 means the file does not exist.
             if modified_time
                 < path_metadata
@@ -171,7 +168,7 @@ pub mod push_tools {
                     let push_message = format!("{} {}", add_or_update, rel_path_str);
                     println!("{} {}", style(curr_idx_str).bold().dim(), push_message);
                     device
-                        .push(file_path, &remote_path_str)
+                        .push(file_path, remote_path_str)
                         .expect("file push error");
                     curr_idx += 1;
                 }
