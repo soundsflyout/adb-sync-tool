@@ -68,24 +68,19 @@ pub mod pull_tools {
 
             let remote_mod_time = device.stat(remote_path_str)?.mod_time as u64;
 
-            let is_hidden: bool = remote_path
-                .file_name()
-                .expect("Not appropriate file name")
-                .to_string_lossy()
-                .starts_with('.');
+            //checks if the file or any of its parent directories are hidden.
+            let is_hidden: bool = remote_path.to_str().unwrap().contains("/.");
 
             if (config.allow_hidden || !is_hidden)
-                && ((!ignore_changes && modified_time < remote_mod_time) || modified_time == 0)
+                && (modified_time == 0 || (!ignore_changes && modified_time < remote_mod_time))
             {
                 let parent_dir = local_path.parent().expect("Cannot find parent directory");
                 let path_buf = PathBuf::from(parent_dir);
-                if config.allow_hidden
-                    || !path_buf
-                        .file_name()
-                        .unwrap()
-                        .to_string_lossy()
-                        .starts_with('.')
-                {
+                let is_added: bool = match dir_queue.last() {
+                    Some(x) => x == parent_dir,
+                    None => false,
+                };
+                if !is_added {
                     dir_queue.push(path_buf);
                 }
                 if modified_time == 0 {

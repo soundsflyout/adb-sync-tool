@@ -57,14 +57,11 @@ pub mod push_tools {
                 .duration_since(UNIX_EPOCH)?
                 .as_secs();
 
-            let is_hidden = local_path
-                .file_name()
-                .unwrap()
-                .to_string_lossy()
-                .starts_with('.');
+            //checks if the file or any of its parent directories are hidden.
+            let is_hidden = local_path.to_str().unwrap().contains("/.");
 
             if (config.allow_hidden || !is_hidden)
-                && ((!ignore_changes && modified_time < local_mod_time) || modified_time == 0)
+                && (modified_time == 0 || (!ignore_changes && modified_time < local_mod_time))
             {
                 let parent_dir = remote_path.parent().expect("Cannot find parent directory");
                 let path_buf = PathBuf::from(parent_dir);
@@ -82,7 +79,6 @@ pub mod push_tools {
                 {
                     dir_queue.push(path_buf);
                 }
-                file_queue.push(local_path);
                 if modified_time == 0 {
                     add += 1;
                     total_file_size += path_metadata.len() as i64;
@@ -90,6 +86,7 @@ pub mod push_tools {
                     change += 1;
                     total_file_size += path_metadata.len() as i64 - remote_file_size;
                 }
+                file_queue.push(local_path);
             }
 
             loading_bar.inc(1);
