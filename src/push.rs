@@ -130,7 +130,7 @@ pub mod push_tools {
         directory_loader.finish();
 
         for path in queue.file_queue {
-            let path_metadata = metadata(&path).unwrap();
+            let path_metadata = metadata(&path)?;
             let mut remote_path = PathBuf::from(&config.remote_dir);
 
             let rel_path = path
@@ -162,9 +162,7 @@ pub mod push_tools {
                     let curr_idx_str = format!("[{}/{}]", curr_idx, total);
                     let push_message = format!("{} {}", add_or_update, rel_path_str);
                     println!("{} {}", style(curr_idx_str).bold().dim(), push_message);
-                    device
-                        .push(file_path, remote_path_str)
-                        .expect("file push error");
+                    device.push(file_path, remote_path_str)?;
                     curr_idx += 1;
                 }
             }
