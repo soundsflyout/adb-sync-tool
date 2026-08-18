@@ -2,13 +2,13 @@ pub mod pull_tools {
     use adb_client::{ADBDeviceExt, server_device::ADBServerDevice};
     use console::style;
     use indicatif::ProgressBar;
+    use std::collections::HashSet;
     use std::error::Error;
     use std::fs::metadata;
     use std::fs::write;
     use std::path::{Path, PathBuf};
     use std::process::Command;
     use std::str::Lines;
-    use std::time::Duration;
     use std::time::UNIX_EPOCH;
 
     use crate::config::ConfigFile;
@@ -31,13 +31,16 @@ pub mod pull_tools {
         device: &mut ADBServerDevice,
         local_path: &Path,
         ignore_changes: bool,
+        delete: bool,
     ) -> Result<Queue, Box<dyn Error>> {
         let mut add: u64 = 0;
         let mut change: u64 = 0;
+        let mut del: u64 = 0;
         let mut total_file_size: i64 = 0;
 
         let mut dir_queue: Vec<PathBuf> = Vec::new();
         let mut file_queue: Vec<PathBuf> = Vec::new();
+        let mut del_queue: HashSet<String> = HashSet::new();
 
         let mut stdout = Vec::new();
         let shell_command: String = format!("find {} -type f", config.remote_dir);
@@ -47,7 +50,18 @@ pub mod pull_tools {
 
         let scan_length: u64 = stdout_str.bytes().filter(|&b| b == b'\n').count() as u64;
 
+        let abs_local_path = local_path.to_str().expect("Invalid path");
         println!("Fetching changes...");
+        if delete {
+            let shell_command: String = format!("find {} -type f", abs_local_path);
+            let output = Command::new("sh").arg("-c").arg(&shell_command).output()?;
+            let stdout_str: String = String::from_utf8(output.stdout)?;
+            let files: Lines = stdout_str.lines();
+            for file in files {
+                del_queue.insert(String::from(file));
+            }
+        }
+
         let loading_bar = ProgressBar::new(scan_length);
 
         for entry in files {
@@ -64,6 +78,10 @@ pub mod pull_tools {
                 Ok(metadata) => metadata.len() as i64,
                 Err(_) => 0,
             };
+
+            if delete {
+                del_queue.remove(local_path.to_str().expect("Not a valid path"));
+            }
 
             let remote_mod_time = device.stat(remote_path_str)?.mod_time as u64;
 
@@ -95,6 +113,12 @@ pub mod pull_tools {
 
             loading_bar.inc(1);
         }
+        if delete {
+            for file in &del_queue {
+                del += 1;
+                total_file_size -= metadata(file)?.len() as i64
+            }
+        }
         loading_bar.finish();
 
         // Convert file in bytes to corresponding kiB
@@ -103,8 +127,10 @@ pub mod pull_tools {
         Ok(Queue {
             dir_queue,
             file_queue,
+            del_queue,
             add,
             change,
+            del,
             total_size: total_file_size,
         })
     }
@@ -114,17 +140,47 @@ pub mod pull_tools {
         config: &ConfigFile,
         device: &mut ADBServerDevice,
         local_path: &Path,
+        delete: bool,
     ) -> Result<(), Box<dyn Error>> {
         let total: u64 = queue.add + queue.change;
         let mut curr_idx: u64 = 1;
 
-        let directory_loader = ProgressBar::new_spinner();
+        if delete && queue.del > 0 {
+            println!("Deleting excess files...");
+            let delete_loader = ProgressBar::new(queue.del);
+            for file in queue.del_queue {
+                let mut curr_path: PathBuf = PathBuf::from(file);
+                let cmd = format!(
+                    "rm -r {}",
+                    curr_path.to_str().expect("Can't convert path to string")
+                );
+                Command::new("sh").arg("-c").arg(cmd).output()?;
+                curr_path = PathBuf::from(curr_path.parent().expect("Missing parent"));
+
+                // We need to delete any empty parent directories.
+                while curr_path.read_dir()?.count() == 0 {
+                    let cmd = format!(
+                        "rm -r {}",
+                        curr_path.to_str().expect("Can't convert path to string")
+                    );
+                    Command::new("sh").arg("-c").arg(cmd).output()?;
+                    curr_path = match curr_path.parent() {
+                        Some(path) => PathBuf::from(path),
+                        None => break,
+                    }
+                }
+                delete_loader.inc(1);
+            }
+            delete_loader.finish();
+        }
+
+        let directory_loader = ProgressBar::new(queue.dir_queue.len() as u64);
         println!("Initializing directories...");
-        directory_loader.enable_steady_tick(Duration::from_millis(100));
         for path in queue.dir_queue {
             let local_path_str = path.to_str().expect("Not a path");
             let cmd = format!(r#"mkdir -p "{}""#, local_path_str);
             Command::new("sh").arg("-c").arg(cmd).output()?;
+            directory_loader.inc(1);
         }
         directory_loader.finish();
 
