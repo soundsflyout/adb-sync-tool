@@ -27,7 +27,7 @@ The following were implemented on an M4 Max Mac Studio and a Oneplus 11. The dat
         brew install --cask android-platform-tools
      ```
 
-     1. For Arch Linux users:
+     2. For Arch Linux users:
 
       ```
          sudo pacman -S android-tools
@@ -44,27 +44,28 @@ cd ~ && git clone https://github.com/soundsflyout/adb-sync-tool/
 *Note: the repository must be in the home directory for the program to read the
 config file properly.*
 
-1. If rust is not installed on your system:
+2. If rust is not installed on your system:
 
 ```
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
 
-1. Install with cargo.
+3. Install with cargo.
 
 ```
 cd ~/adb-sync-tool && cargo install --path .
 ```
 
-1. Create a `config.json` file in `~/adb-sync-tool/` and follow the format
+4. Create a `config.json` file in `~/adb-sync-tool/` and follow the format
    in `example_config.json`. See the next section for more info.
 
-2. To run the program, plug in your android device via usb and run:
+5. To run the program, plug in your android device via usb and run:
 
 - `ast push {YOUR_ALIAS}` to sync files from your local machine to the android device.
 - `ast pull {YOUR_ALIAS}` to sync files from your android device to your local machine.
-
-See `ast --help` for additional options.
+- Adding the flag '--delete' will delete any files that are in the target but not in the source.
+- Adding the flag '--ignore_changes' will ignore updating changes. 
+See `ast --help` for options.
 
 ## Getting the android device storage location for config.json
 
