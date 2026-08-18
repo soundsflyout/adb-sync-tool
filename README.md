@@ -17,7 +17,7 @@ The following were implemented on an M4 Max Mac Studio and a Oneplus 11. The dat
 | Push | 116.21 ± 2.08 | 88.67 ± 3.96 | 31.1%  |
 | Pull | 63.38 ± 1.94 | 36.48 ± 1.95 | 73.7% |
 
-## Installation and usage instructions
+## Manual installation and usage instructions
 
 0. Make sure that android-debug-bridge (adb) is installed and developer options are turned on.
    - To install adb, please look up instructions based on your distribution.
