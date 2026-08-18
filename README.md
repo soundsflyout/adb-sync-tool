@@ -4,7 +4,7 @@ Seamlessly syncs directories between your Mac/Linux machine and Android.
 
 ## Introduction
 
-Similar to projects such as [adb-sync](https://github.com/google/adb-sync) and [better-adb-sync](https://github.com/jb2170/better-adb-sync), adb-sync-tool's goal is to sync between a local directory and an android device directory using adb. Unlike the other projects, adb-sync-tool is designed for directories that will need to be synced frequently, by employing a config file and an alias rather than ad-hoc `local` and `remote` arguments.
+Similar to projects such as [adb-sync](https://github.com/google/adb-sync) and [better-adb-sync](https://github.com/jb2170/better-adb-sync), adb-sync-tool's goal is to sync between a local directory and an android device directory using adb. Unlike the other projects, adb-sync-tool is designed for directories that will need to be synced frequently, by employing a config file and an alias rather than ad-hoc `local` and `remote` arguments. This program leverages the [adb_client](cocool97) Rust library for speedy transfers. 
 
 See it in action:
 
