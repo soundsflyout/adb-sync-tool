@@ -11,7 +11,7 @@ See it in action:
 ![See it in action](./ast-example.gif)
 
 ## Speed comparisons
-The following were implemented on an M4 Max Mac Studio and a Oneplus 11. The files used were ten samples consisting of 961 txt files coming from entries 1--1000 in [Project Gutenberg's library](https://www.gutenberg.org/ebooks/offline_catalogs.html).
+The following were implemented on an M4 Max Mac Studio and a Oneplus 11. The files used were ten samples consisting of 961 txt files coming from entries 1-1000 in [Project Gutenberg's library](https://www.gutenberg.org/ebooks/offline_catalogs.html).
 | Stream Direction | BetterADBSync | Adb-Sync-tool | % Improvement |
 | -----------------|---------------|---------------|----------------|
 | Push | 116.21 ± 2.08 | 88.67 ± 3.96 | 31.1%  |
