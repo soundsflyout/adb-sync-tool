@@ -52,6 +52,10 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
 cd ~/adb-sync-tool && cargo install --path .
 ```
+*Note: Make sure to add $HOME/.cargo/bin to your PATH to get the binary to run anywhere.* E.g. on bash add the following line to yout `~/.bashrc` file:
+```[~/.bashrc]
+   export PATH=$PATH:$HOME/.cargo/bin
+```
 
 4. Create a `config.json` file in `~/.config/adb-sync-tool/` (create the directory) and follow the format
    in `example_config.json`. See the next section for more info.
