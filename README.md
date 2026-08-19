@@ -41,9 +41,6 @@ The following were implemented on an M4 Max Mac Studio and a Oneplus 11. The dat
 cd ~ && git clone https://github.com/soundsflyout/adb-sync-tool/
 ```
 
-*Note: the repository must be in the home directory for the program to read the
-config file properly.*
-
 2. If rust is not installed on your system:
 
 ```
@@ -56,7 +53,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 cd ~/adb-sync-tool && cargo install --path .
 ```
 
-4. Create a `config.json` file in `~/adb-sync-tool/` and follow the format
+4. Create a `config.json` file in `~/.config/adb-sync-tool/` (create the directory) and follow the format
    in `example_config.json`. See the next section for more info.
 
 5. To run the program, plug in your android device via usb and run:
