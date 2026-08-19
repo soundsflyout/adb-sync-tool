@@ -111,7 +111,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         Some(path) => path,
         None => panic!("No root path found"),
     };
-    config_path.push("adb-sync-tool/config.json");
+    config_path.push(".config/adb-sync-tool/config.json");
 
     let config_file = match File::open(config_path) {
         Ok(file) => file,
