@@ -14,15 +14,13 @@ pub mod pull_tools {
     use crate::config::ConfigFile;
     use crate::queue::Queue;
 
-    fn modified_time(local_path: &Path) -> u64 {
+    fn modified_time(local_path: &Path) -> Result<u64, Box<dyn Error>> {
         match metadata(local_path) {
-            Ok(path_metadata) => path_metadata
-                .modified()
-                .unwrap()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_secs(),
-            Err(_) => 0,
+            Ok(path_metadata) => Ok(path_metadata
+                .modified()?
+                .duration_since(UNIX_EPOCH)?
+                .as_secs()),
+            _ => Ok(0),
         }
     }
 
@@ -33,14 +31,15 @@ pub mod pull_tools {
         ignore_changes: bool,
         delete: bool,
     ) -> Result<Queue, Box<dyn Error>> {
-        let mut add: u64 = 0;
-        let mut change: u64 = 0;
-        let mut del: u64 = 0;
-        let mut total_file_size: i64 = 0;
-
-        let mut dir_queue: Vec<PathBuf> = Vec::new();
-        let mut file_queue: Vec<PathBuf> = Vec::new();
-        let mut del_queue: HashSet<String> = HashSet::new();
+        let mut queue = Queue {
+            dir_queue: Vec::new(),
+            file_queue: Vec::new(),
+            del_queue: HashSet::new(),
+            add: 0,
+            change: 0,
+            del: 0,
+            total_size: 0,
+        };
 
         let mut stdout = Vec::new();
         let shell_command: String = format!("find {} -type f", config.remote_dir);
@@ -50,7 +49,7 @@ pub mod pull_tools {
 
         let scan_length: u64 = stdout_str.bytes().filter(|&b| b == b'\n').count() as u64;
 
-        let abs_local_path = local_path.to_str().expect("Invalid path");
+        let abs_local_path = local_path.to_str().unwrap();
         println!("Fetching changes...");
         if delete {
             let shell_command: String = format!("find {} -type f", abs_local_path);
@@ -58,7 +57,7 @@ pub mod pull_tools {
             let stdout_str: String = String::from_utf8(output.stdout)?;
             let files: Lines = stdout_str.lines();
             for file in files {
-                del_queue.insert(String::from(file));
+                queue.del_queue.insert(String::from(file));
             }
         }
 
@@ -66,21 +65,21 @@ pub mod pull_tools {
 
         for entry in files {
             let remote_path = PathBuf::from(entry);
-            let remote_path_str = remote_path.to_str().expect("Invalid path");
+            let remote_path_str = remote_path.to_str().unwrap();
 
             let rel_path = remote_path.strip_prefix(&config.remote_dir)?;
 
             //shadow the local_path input since it is not needed outside of here.
             let mut local_path = local_path.to_path_buf();
             local_path.push(rel_path);
-            let modified_time: u64 = modified_time(&local_path);
+            let modified_time: u64 = modified_time(&local_path)?;
             let local_file_size: i64 = match metadata(&local_path) {
                 Ok(metadata) => metadata.len() as i64,
                 Err(_) => 0,
             };
 
             if delete {
-                del_queue.remove(local_path.to_str().expect("Not a valid path"));
+                queue.del_queue.remove(local_path.to_str().unwrap());
             }
 
             let remote_mod_time = device.stat(remote_path_str)?.mod_time as u64;
@@ -93,46 +92,38 @@ pub mod pull_tools {
             {
                 let parent_dir = local_path.parent().expect("Cannot find parent directory");
                 let path_buf = PathBuf::from(parent_dir);
-                let is_added: bool = match dir_queue.last() {
+                let is_added: bool = match queue.dir_queue.last() {
                     Some(x) => x == parent_dir,
                     None => false,
                 };
                 if !is_added {
-                    dir_queue.push(path_buf);
+                    queue.dir_queue.push(path_buf);
                 }
                 if modified_time == 0 {
-                    add += 1;
-                    total_file_size += device.stat(remote_path_str)?.file_size as i64;
+                    queue.add += 1;
+                    queue.total_size += device.stat(remote_path_str)?.file_size as i64;
                 } else {
-                    change += 1;
-                    total_file_size +=
+                    queue.change += 1;
+                    queue.total_size +=
                         device.stat(remote_path_str)?.file_size as i64 - local_file_size;
                 }
-                file_queue.push(remote_path);
+                queue.file_queue.push(remote_path);
             }
 
             loading_bar.inc(1);
         }
         if delete {
-            for file in &del_queue {
-                del += 1;
-                total_file_size -= metadata(file)?.len() as i64
+            for file in &queue.del_queue {
+                queue.del += 1;
+                queue.total_size -= metadata(file)?.len() as i64
             }
         }
         loading_bar.finish();
 
         // Convert file in bytes to corresponding kiB
-        total_file_size /= 1024;
+        queue.total_size /= 1024;
 
-        Ok(Queue {
-            dir_queue,
-            file_queue,
-            del_queue,
-            add,
-            change,
-            del,
-            total_size: total_file_size,
-        })
+        Ok(queue)
     }
 
     pub fn write_changes(
@@ -143,26 +134,20 @@ pub mod pull_tools {
         delete: bool,
     ) -> Result<(), Box<dyn Error>> {
         let total: u64 = queue.add + queue.change;
-        let mut curr_idx: u64 = 1;
+        let mut curr_idx = 1;
 
         if delete && queue.del > 0 {
             println!("Deleting excess files...");
             let delete_loader = ProgressBar::new(queue.del);
             for file in queue.del_queue {
                 let mut curr_path: PathBuf = PathBuf::from(file);
-                let cmd = format!(
-                    "rm -r {}",
-                    curr_path.to_str().expect("Can't convert path to string")
-                );
+                let cmd = format!("rm -r {}", curr_path.to_str().unwrap());
                 Command::new("sh").arg("-c").arg(cmd).output()?;
                 curr_path = PathBuf::from(curr_path.parent().expect("Missing parent"));
 
                 // We need to delete any empty parent directories.
                 while curr_path.read_dir()?.count() == 0 {
-                    let cmd = format!(
-                        "rm -r {}",
-                        curr_path.to_str().expect("Can't convert path to string")
-                    );
+                    let cmd = format!("rm -r {}", curr_path.to_str().unwrap());
                     Command::new("sh").arg("-c").arg(cmd).output()?;
                     curr_path = match curr_path.parent() {
                         Some(path) => PathBuf::from(path),
@@ -177,7 +162,7 @@ pub mod pull_tools {
         let directory_loader = ProgressBar::new(queue.dir_queue.len() as u64);
         println!("Initializing directories...");
         for path in queue.dir_queue {
-            let local_path_str = path.to_str().expect("Not a path");
+            let local_path_str = path.to_str().unwrap();
             let cmd = format!(r#"mkdir -p "{}""#, local_path_str);
             Command::new("sh").arg("-c").arg(cmd).output()?;
             directory_loader.inc(1);
@@ -187,31 +172,28 @@ pub mod pull_tools {
         for path in queue.file_queue {
             let mut curr_local_path = PathBuf::from(&local_path);
 
-            let rel_path = path
-                .strip_prefix(&config.remote_dir)
-                .expect("Error: wrong prefix");
+            let rel_path = path.strip_prefix(&config.remote_dir)?;
 
-            let rel_path_str = rel_path.to_str().expect("Not a string");
+            let rel_path_str = rel_path.to_str().unwrap();
 
             curr_local_path.push(rel_path);
-            let local_path_str = curr_local_path.to_str().expect("Not a path");
+            let local_path_str = curr_local_path.to_str().unwrap();
 
-            let modified_time = modified_time(&curr_local_path) as u32;
-            let remote_path_str = path.to_str().expect("This remote path is not valid");
-            let remote_mod_time = device.stat(remote_path_str)?.mod_time;
+            let modified_time = modified_time(&curr_local_path)? as u32;
+            let remote_path_str = String::from(path.to_str().unwrap());
+            let remote_mod_time = device.stat(&remote_path_str)?.mod_time;
 
             // Since this is unix time, a value of 0 means the file does not exist.
             if modified_time < remote_mod_time {
-                let add_or_update: &str = if modified_time == 0 {
-                    "Adding"
-                } else {
-                    "Updating"
+                let add_or_update: &str = match modified_time {
+                    0 => "Adding",
+                    _ => "Updating",
                 };
                 let curr_idx_str = format!("[{}/{}]", curr_idx, total);
                 let push_message = format!("{} {}", add_or_update, rel_path_str);
                 println!("{} {}", style(curr_idx_str).bold().dim(), push_message);
                 let mut stdout = Vec::new();
-                device.pull(&String::from(remote_path_str), &mut stdout)?;
+                device.pull(&remote_path_str, &mut stdout)?;
                 write(local_path_str, stdout)?;
                 curr_idx += 1;
             }

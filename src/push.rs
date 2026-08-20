@@ -20,15 +20,17 @@ pub mod push_tools {
         ignore_changes: bool,
         delete: bool,
     ) -> Result<Queue, Box<dyn Error>> {
-        let mut add: u64 = 0;
-        let mut change: u64 = 0;
-        let mut del: u64 = 0;
-        let mut total_file_size: i64 = 0;
+        let mut queue = Queue {
+            dir_queue: Vec::new(),
+            file_queue: Vec::new(),
+            del_queue: HashSet::new(),
+            add: 0,
+            change: 0,
+            del: 0,
+            total_size: 0,
+        };
 
-        let abs_local_path = local_path.to_str().expect("Invalid path");
-
-        let mut dir_queue: Vec<PathBuf> = Vec::new();
-        let mut file_queue: Vec<PathBuf> = Vec::new();
+        let abs_local_path = local_path.to_str().unwrap();
 
         let shell_command: String = format!("find {} -type f", abs_local_path);
         let output = Command::new("sh").arg("-c").arg(&shell_command).output()?;
@@ -49,7 +51,15 @@ pub mod push_tools {
             }
         }
 
-        let scan_length: u64 = stdout_str.bytes().filter(|&b| b == b'\n').count() as u64;
+        let scan_length: u64 = match stdout_str
+            .bytes()
+            .filter(|&b| b == b'\n')
+            .count()
+            .checked_sub(1)
+        {
+            Some(x) => x as u64,
+            None => 0,
+        };
 
         let loading_bar = ProgressBar::new(scan_length);
 
@@ -60,7 +70,7 @@ pub mod push_tools {
 
             let mut remote_path = PathBuf::from(&config.remote_dir);
             remote_path.push(rel_path);
-            let remote_path_str = remote_path.to_str().expect("Invalid path");
+            let remote_path_str = remote_path.to_str().unwrap();
             let remote_file_size = device.stat(remote_path_str)?.file_size as i64;
 
             if delete {
@@ -83,7 +93,7 @@ pub mod push_tools {
             {
                 let parent_dir = remote_path.parent().expect("Cannot find parent directory");
                 let path_buf = PathBuf::from(parent_dir);
-                let is_added: bool = match dir_queue.last() {
+                let is_added: bool = match queue.dir_queue.last() {
                     Some(x) => x == parent_dir,
                     None => false,
                 };
@@ -95,40 +105,32 @@ pub mod push_tools {
                             .to_string_lossy()
                             .starts_with('.'))
                 {
-                    dir_queue.push(path_buf);
+                    queue.dir_queue.push(path_buf);
                 }
                 if modified_time == 0 {
-                    add += 1;
-                    total_file_size += path_metadata.len() as i64;
+                    queue.add += 1;
+                    queue.total_size += path_metadata.len() as i64;
                 } else {
-                    change += 1;
-                    total_file_size += path_metadata.len() as i64 - remote_file_size;
+                    queue.change += 1;
+                    queue.total_size += path_metadata.len() as i64 - remote_file_size;
                 }
-                file_queue.push(local_path);
+                queue.file_queue.push(local_path);
             }
             loading_bar.inc(1);
         }
 
         if delete {
             for file in &del_queue {
-                del += 1;
-                total_file_size -= device.stat(file)?.file_size as i64
+                queue.del += 1;
+                queue.total_size -= device.stat(file)?.file_size as i64
             }
         }
         loading_bar.finish();
 
         // Convert file in bytes to corresponding kiB
-        total_file_size /= 1024;
+        queue.total_size /= 1024;
 
-        Ok(Queue {
-            dir_queue,
-            file_queue,
-            del_queue,
-            add,
-            change,
-            del,
-            total_size: total_file_size,
-        })
+        Ok(queue)
     }
 
     pub fn write_changes(
@@ -139,7 +141,7 @@ pub mod push_tools {
         delete: bool,
     ) -> Result<(), Box<dyn Error>> {
         let total: u64 = queue.add + queue.change;
-        let mut curr_idx: u64 = 1;
+        let mut curr_idx = 1;
 
         let abs_local_path = local_path.to_str().unwrap();
 
@@ -149,14 +151,8 @@ pub mod push_tools {
             // We need to delete the file, and any empty parent directories.
             for file in queue.del_queue {
                 let mut curr_path: PathBuf = PathBuf::from(file);
-                while device
-                    .list(curr_path.to_str().expect("Can't convert path to string"))?
-                    .is_empty()
-                {
-                    let cmd = format!(
-                        "rm -r {}",
-                        curr_path.to_str().expect("Can't convert path to string")
-                    );
+                while device.list(curr_path.to_str().unwrap())?.is_empty() {
+                    let cmd = format!("rm -r {}", curr_path.to_str().unwrap());
                     device.shell_command(&cmd, None, None)?;
                     curr_path = match curr_path.parent() {
                         Some(path) => PathBuf::from(path),
@@ -171,7 +167,7 @@ pub mod push_tools {
         let directory_loader = ProgressBar::new(queue.dir_queue.len() as u64);
         println!("Initializing directories...");
         for path in queue.dir_queue {
-            let remote_path_str = path.to_str().expect("Invalid path");
+            let remote_path_str = path.to_str().unwrap();
             let cmd = format!(r#"mkdir -p "{}""#, remote_path_str);
             device.shell_command(&cmd, None, None)?;
             directory_loader.inc(1);
@@ -187,7 +183,7 @@ pub mod push_tools {
             let rel_path_str = rel_path.to_str().unwrap();
 
             remote_path.push(rel_path);
-            let remote_path_str = remote_path.to_str().expect("Invalid path");
+            let remote_path_str = remote_path.to_str().unwrap();
 
             let modified_time = device.stat(remote_path_str)?.mod_time as u64;
             // Since this is unix time, a value of 0 means the file does not exist.
@@ -198,10 +194,9 @@ pub mod push_tools {
                     .as_secs()
             {
                 let file_path = File::open(&path)?;
-                let add_or_update: &str = if modified_time == 0 {
-                    "Adding"
-                } else {
-                    "Updating"
+                let add_or_update: &str = match modified_time {
+                    0 => "Adding",
+                    _ => "Updating",
                 };
                 let curr_idx_str = format!("[{}/{}]", curr_idx, total);
                 let push_message = format!("{} {}", add_or_update, rel_path_str);

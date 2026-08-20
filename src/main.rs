@@ -57,8 +57,8 @@ impl FilesizeType {
     }
 }
 
-fn filesize_type(input: &str) -> FilesizeType {
-    let value: i64 = input.parse().expect("Not a valid number");
+fn filesize_type(input: i64) -> FilesizeType {
+    let value = input.abs();
     match value {
         0..MIB_OVER_KIB => FilesizeType::Kibibyte,
         MIB_OVER_KIB..GIB_OVER_KIB => FilesizeType::Mebibyte,
@@ -67,14 +67,14 @@ fn filesize_type(input: &str) -> FilesizeType {
     }
 }
 
-fn human_readable(input: &str) -> f64 {
+fn human_readable(input: i64) -> f64 {
     let filesize = filesize_type(input);
-    let value: f64 = input.parse().expect("Not a valid number");
+    let finput = input as f64;
     match filesize {
-        FilesizeType::Kibibyte => value,
-        FilesizeType::Mebibyte => value / (MIB_OVER_KIB as f64),
-        FilesizeType::Gibibyte => value / (GIB_OVER_KIB as f64),
-        FilesizeType::Tebibyte => value / (TIB_OVER_KIB as f64),
+        FilesizeType::Kibibyte => finput,
+        FilesizeType::Mebibyte => finput / (MIB_OVER_KIB as f64),
+        FilesizeType::Gibibyte => finput / (GIB_OVER_KIB as f64),
+        FilesizeType::Tebibyte => finput / (TIB_OVER_KIB as f64),
     }
 }
 
@@ -83,21 +83,33 @@ fn check_enough_space(addition: i64, free_space: i64) -> bool {
         println!("Not enough space on disk");
         return false;
     }
+    // This command could only error if interact got an
+    // unexpected input, in which case the program *should*
+    // crash.
     Confirm::new()
         .with_prompt("Do you want to make changes?")
         .interact()
-        .expect("Unsupported input")
+        .expect("Unexpected input")
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
     let cli_input = Cli::parse();
 
     if !(cfg!(target_os = "macos") || cfg!(target_os = "linux")) {
-        panic!("Unsupported OS. Only MacOS and Linux are currently supported.")
+        println!("Unsupported OS. Only MacOS and Linux are currently supported. Exiting...");
+        return Ok(());
     }
 
     let mut server = ADBServer::default();
-    let mut device = server.get_device().expect("Can't get device");
+    let mut device = match server.get_device() {
+        Ok(device) => device,
+        Err(_) => {
+            println!(
+                "Cannot find device. Please make sure that the device is connected. Exiting..."
+            );
+            return Ok(());
+        }
+    };
 
     if cli_input.stream_dir == "storage" {
         let mut stdout = Vec::new();
@@ -109,7 +121,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let mut config_path = match env::home_dir() {
         Some(path) => path,
-        None => panic!("No root path found"),
+        None => panic!("No root path found. Exiting..."),
     };
     config_path.push(".config/adb-sync-tool/config.json");
 
@@ -144,7 +156,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             cli_input.ignore_changes,
             cli_input.delete,
         ) else {
-            panic!("Can't grab files. Do both the local and remote directories exist?")
+            println!("Can't grab files. Do both the local and remote directories exist?");
+            return Ok(());
         };
 
         println!("Files to add: {}", queue.add);
@@ -156,47 +169,33 @@ fn main() -> Result<(), Box<dyn Error>> {
             return Ok(());
         }
 
-        let is_neg: bool = queue.total_size < 0;
-        let update_file_size_str: &str = if is_neg {
-            &format!("{}", -queue.total_size)
-        } else {
-            &format!("{}", queue.total_size)
-        };
-        let update_file_size_human_readable = human_readable(update_file_size_str);
-        let update_file_size_filesize_type = filesize_type(update_file_size_str).display();
-        if is_neg {
-            println!(
-                "Size of files to be changed: -{:.2} {}",
-                update_file_size_human_readable, update_file_size_filesize_type
-            );
-        } else {
-            println!(
-                "Size of files to be changed: {:.2} {}",
-                update_file_size_human_readable, update_file_size_filesize_type
-            );
-        }
+        let update_file_size_human_readable = human_readable(queue.total_size);
+        let update_file_size_filesize_type = filesize_type(queue.total_size).display();
+        println!(
+            "Size of files to be changed: {:.2} {}",
+            update_file_size_human_readable, update_file_size_filesize_type
+        );
 
         let mut stdout = Vec::new();
         let shell_command: String = format!(r#"df "{}" | tail -n 1"#, config.remote_dir);
         device.shell_command(&shell_command, Some(&mut stdout), None)?;
         let stdout_str: String = String::from_utf8(stdout)?;
         let stdout_values: Vec<&str> = stdout_str.split_whitespace().collect();
-        let free_human_readable = human_readable(stdout_values[3]);
-        let free_filesize_type = filesize_type(stdout_values[3]).display();
-
-        let free_dir_size: i64 = stdout_values[3].parse()?;
+        let free_space: i64 = stdout_values[3].parse()?;
+        let free_human_readable = human_readable(free_space);
+        let free_filesize_type = filesize_type(free_space).display();
 
         println!(
             "Space available: {:.2} {}",
             free_human_readable, free_filesize_type
         );
 
-        let confirmation: bool = check_enough_space(queue.total_size, free_dir_size);
+        let confirmation: bool = check_enough_space(queue.total_size, free_space);
 
-        if !confirmation {
-            println!("Exiting...");
-        } else {
+        if confirmation {
             push_tools::write_changes(queue, &config, &mut device, &local_path, cli_input.delete)?;
+        } else {
+            println!("Exiting...");
         }
     }
 
@@ -208,7 +207,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             cli_input.ignore_changes,
             cli_input.delete,
         ) else {
-            panic!("Can't grab files. Do both the local and remote directories exist?")
+            println!("Can't grab files. Do both the local and remote directories exist?");
+            return Ok(());
         };
 
         println!("Files to add: {}", queue.add);
@@ -220,25 +220,12 @@ fn main() -> Result<(), Box<dyn Error>> {
             return Ok(());
         }
 
-        let is_neg: bool = queue.total_size < 0;
-        let update_file_size_str: &str = if is_neg {
-            &format!("{}", -queue.total_size)
-        } else {
-            &format!("{}", queue.total_size)
-        };
-        let update_file_size_human_readable = human_readable(update_file_size_str);
-        let update_file_size_filesize_type = filesize_type(update_file_size_str).display();
-        if is_neg {
-            println!(
-                "Size of files to be changed: -{:.2} {}",
-                update_file_size_human_readable, update_file_size_filesize_type
-            );
-        } else {
-            println!(
-                "Size of files to be changed: {:.2} {}",
-                update_file_size_human_readable, update_file_size_filesize_type
-            );
-        }
+        let update_file_size_human_readable = human_readable(queue.total_size);
+        let update_file_size_filesize_type = filesize_type(queue.total_size).display();
+        println!(
+            "Size of files to be changed: {:.2} {}",
+            update_file_size_human_readable, update_file_size_filesize_type
+        );
         let unix_command: String =
             format!(r#"df -k "{}" | tail -n 1"#, local_path.to_str().unwrap());
 
@@ -248,22 +235,20 @@ fn main() -> Result<(), Box<dyn Error>> {
             .stdout(Stdio::piped())
             .output()?;
 
-        let stdout_str = String::from_utf8(output.stdout).unwrap();
+        let stdout_str = String::from_utf8(output.stdout)?;
         let stdout_values: Vec<&str> = stdout_str.split_whitespace().collect();
 
-        let free_space: &str = stdout_values[3];
+        let free_space: i64 = stdout_values[3].parse()?;
 
         let free_human_readable = human_readable(free_space);
         let free_filesize_type = filesize_type(free_space).display();
-
-        let free_dir_size: i64 = free_space.parse()?;
 
         println!(
             "Space available: {:.2} {}",
             free_human_readable, free_filesize_type
         );
 
-        let confirmation: bool = check_enough_space(queue.total_size, free_dir_size);
+        let confirmation: bool = check_enough_space(queue.total_size, free_space);
         if !confirmation {
             println!("Exiting...");
         } else {
