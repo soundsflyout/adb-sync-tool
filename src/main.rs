@@ -249,10 +249,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         );
 
         let confirmation: bool = check_enough_space(queue.total_size, free_space);
-        if !confirmation {
-            println!("Exiting...");
+        if confirmation {
+            pull_tools::write_changes(queue, &config, &mut device, &local_path, cli_input.delete)?;
         } else {
-            pull_tools::write_changes(queue, &config, &mut device, &local_path, cli_input.delete)?
+            println!("Exiting...");
         }
     }
     Ok(())
