@@ -17,7 +17,16 @@ The following were implemented on an M4 Max Mac Studio and a Oneplus 11. The dat
 | Push | 116.21 ± 2.08 | 88.67 ± 3.96 | 31.1%  |
 | Pull | 63.38 ± 1.94 | 36.48 ± 1.95 | 73.7% |
 
-## Manual installation and usage instructions
+## Usage instructions
+To run the program, plug in your android device via usb and run:
+
+- `ast push {YOUR_ALIAS}` to sync files from your local machine to the android device.
+- `ast pull {YOUR_ALIAS}` to sync files from your android device to your local machine.
+- Adding the flag '--delete' will delete any files that are in the target but not in the source.
+- Adding the flag '--ignore_changes' will ignore updating changes. 
+See `ast --help` for options.
+
+## Manual installation
 
 0. Make sure that android-debug-bridge (adb) is installed and developer options are turned on.
    - To install adb, please look up instructions based on your distribution.
@@ -59,14 +68,6 @@ cd ~/adb-sync-tool && cargo install --path .
 
 4. Create a `config.json` file in `~/.config/adb-sync-tool/` (create the directory) and follow the format
    in `example_config.json`. See the next section for more info.
-
-5. To run the program, plug in your android device via usb and run:
-
-- `ast push {YOUR_ALIAS}` to sync files from your local machine to the android device.
-- `ast pull {YOUR_ALIAS}` to sync files from your android device to your local machine.
-- Adding the flag '--delete' will delete any files that are in the target but not in the source.
-- Adding the flag '--ignore_changes' will ignore updating changes. 
-See `ast --help` for options.
 
 ## Getting the android device storage location for config.json
 
@@ -113,5 +114,3 @@ to configure sync for the `Music` folder in the SD card.
 - If any directory is empty, the program will ignore it. It will never push/pull/delete an empty directory.
 - If a directory does not have permissions to be written to, the program will
 exit.
-
-## Known issues
