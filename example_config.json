@@ -6,7 +6,12 @@
     "remote_dir": "/path/on/android/to/music/folder",
     //change this to `true` if you want to allow files/directories
     // with a dot starting in the name (e.g. /.config/)
-    "allow_hidden": false
+    "allow_hidden": false,
+    // Delete the next line if only one device is plugged in and
+    // you don't want to bother figuring out the device name.
+    // Otherwise, use the command `ast devices` to list the names
+    // of all plugged in android devices.
+    "device_name": "some-id-like-12345678"
 },
 "my_pictures": {
     //If you remove the the first `/` in `local_dir`, this will 
