@@ -22,6 +22,8 @@ To run the program, plug in your android device via usb and run:
 
 - `ast push {YOUR_ALIAS}` to sync files from your local machine to the android device.
 - `ast pull {YOUR_ALIAS}` to sync files from your android device to your local machine.
+- `ast devices` lists the names of connected android devices (to be used in `config.json`).
+- `ast storage` lists all the mount points on your device (to be used in `config.json`).
 - Adding the flag '--delete' will delete any files that are in the target but not in the source.
 - Adding the flag '--ignore_changes' will ignore updating changes. 
 See `ast --help` for options.
