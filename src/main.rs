@@ -12,7 +12,7 @@ const FILE_SPACE_BUFFER: i64 = 10_024;
 
 use adb_client::{ADBDeviceExt, server::ADBServer};
 use clap::Parser;
-use dialoguer::Confirm;
+use dialoguer::{Confirm, MultiSelect};
 use serde_json::value::Value;
 use std::env;
 use std::error::Error;
@@ -26,15 +26,14 @@ use crate::push::push_tools;
 
 #[derive(Parser)]
 struct Cli {
-    stream_dir: String, //push or pull
+    command: String, //push or pull
     alias: Option<String>,
 
-    // Set --ignore_changes if you don't want to update changes
+    /// only update new files.
     #[arg(short, long, default_value_t = false)]
     ignore_changes: bool,
 
-    // Set --delete if you want to allow the program to delete
-    // files in target not found in source.
+    /// delete files in target that are not in source.
     #[arg(short, long, default_value_t = false)]
     delete: bool,
 }
@@ -101,21 +100,37 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     let mut server = ADBServer::default();
-    let mut device = match server.get_device() {
-        Ok(device) => device,
-        Err(_) => {
-            println!(
-                "Cannot find device. Please make sure that the device is connected. Exiting..."
-            );
-            return Ok(());
-        }
-    };
 
-    if cli_input.stream_dir == "storage" {
-        let mut stdout = Vec::new();
-        device.shell_command(&"df -h", Some(&mut stdout), None)?;
-        let stdout_str: String = String::from_utf8(stdout)?;
-        println!("{}", stdout_str);
+    if cli_input.command == "devices" {
+        println!("Connected devices:");
+        let connected_devices: Vec<String> = server
+            .devices()?
+            .iter()
+            .map(|x| x.identifier.clone())
+            .collect();
+        println!("{:?}", connected_devices);
+        return Ok(());
+    }
+
+    if cli_input.command == "storage" {
+        let connected_devices: Vec<String> = server
+            .devices()?
+            .iter()
+            .map(|x| x.identifier.clone())
+            .collect();
+        println!("{:?}", connected_devices);
+        let selection = MultiSelect::new()
+            .with_prompt("Choose device(s): \n Use up/down or k/j to move up/down and select with Space. Press Enter to confirm.")
+            .items(&connected_devices)
+            .interact()?;
+
+        for idx in selection {
+            let mut stdout = Vec::new();
+            let mut device = server.get_device_by_name(&connected_devices[idx])?;
+            device.shell_command(&"df -h", Some(&mut stdout), None)?;
+            let stdout_str: String = String::from_utf8(stdout)?;
+            println!("{}", stdout_str);
+        }
         return Ok(());
     }
 
@@ -142,13 +157,34 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut alias: Value = serde_json::from_reader(config_file).expect("Cannot read config file");
     let config: ConfigFile = serde_json::from_value(alias[cli_alias].take())?;
 
+    let mut device = match &config.device_name {
+        None => match server.get_device() {
+            Ok(device) => device,
+            Err(_) => {
+                println!(
+                    "Cannot find device. Please make sure that only one device is connected. Exiting..."
+                );
+                return Ok(());
+            }
+        },
+        Some(name) => match server.get_device_by_name(name) {
+            Ok(device) => device,
+            Err(_) => {
+                println!(
+                    "Cannot find device. Please make sure that device is connected. Exiting..."
+                );
+                return Ok(());
+            }
+        },
+    };
+
     let mut local_path = match env::home_dir() {
         Some(path) => path,
         None => panic!("No root path found"),
     };
     local_path.push(&config.local_dir);
 
-    if cli_input.stream_dir == "push" {
+    if cli_input.command == "push" {
         let Ok(queue) = push_tools::fetch_changes(
             &config,
             &mut device,
@@ -199,7 +235,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     }
 
-    if cli_input.stream_dir == "pull" {
+    if cli_input.command == "pull" {
         let Ok(queue) = pull_tools::fetch_changes(
             &config,
             &mut device,

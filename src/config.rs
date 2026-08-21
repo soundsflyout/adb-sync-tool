@@ -5,4 +5,6 @@ pub struct ConfigFile {
     pub local_dir: String,
     pub remote_dir: String,
     pub allow_hidden: bool,
+    #[serde(default)]
+    pub device_name: Option<String>,
 }
