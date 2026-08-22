@@ -1,3 +1,4 @@
+pub mod cli;
 pub mod config;
 pub mod pull;
 pub mod push;
@@ -12,7 +13,7 @@ const FILE_SPACE_BUFFER: i64 = 10_024;
 
 use adb_client::{ADBDeviceExt, server::ADBServer};
 use clap::Parser;
-use dialoguer::{Confirm, MultiSelect};
+use dialoguer::Confirm;
 use serde_json::value::Value;
 use std::env;
 use std::error::Error;
@@ -20,6 +21,7 @@ use std::fs::File;
 use std::process::Command;
 use std::process::Stdio;
 
+use crate::cli::cli_tools::{get_devices, get_storage_info};
 use crate::config::ConfigFile;
 use crate::pull::pull_tools;
 use crate::push::push_tools;
@@ -99,39 +101,23 @@ fn main() -> Result<(), Box<dyn Error>> {
         return Ok(());
     }
 
+    let mut commands = vec!["devices", "storage", "push", "pull"].into_iter();
+    if !commands.any(|x| cli_input.command == x) {
+        println!("Invalid input. Exiting...");
+        return Ok(());
+    }
+
     let mut server = ADBServer::default();
 
     if cli_input.command == "devices" {
         println!("Connected devices:");
-        let connected_devices: Vec<String> = server
-            .devices()?
-            .iter()
-            .map(|x| x.identifier.clone())
-            .collect();
-        println!("{:?}", connected_devices);
-        return Ok(());
+        for device_id in get_devices(&mut server)? {
+            println!("{}", device_id);
+        }
     }
 
     if cli_input.command == "storage" {
-        let connected_devices: Vec<String> = server
-            .devices()?
-            .iter()
-            .map(|x| x.identifier.clone())
-            .collect();
-        println!("{:?}", connected_devices);
-        let selection = MultiSelect::new()
-            .with_prompt("Choose device(s): \n Use up/down or k/j to move up/down and select with Space. Press Enter to confirm.")
-            .items(&connected_devices)
-            .interact()?;
-
-        for idx in selection {
-            let mut stdout = Vec::new();
-            let mut device = server.get_device_by_name(&connected_devices[idx])?;
-            device.shell_command(&"df -h", Some(&mut stdout), None)?;
-            let stdout_str: String = String::from_utf8(stdout)?;
-            println!("{}", stdout_str);
-        }
-        return Ok(());
+        get_storage_info(&mut server)?;
     }
 
     let mut config_path = match env::home_dir() {
